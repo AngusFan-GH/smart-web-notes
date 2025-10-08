@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vue3 Content Script 测试页面</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        padding: 20px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        min-height: 100vh;
+      }
+      .content {
+        max-width: 800px;
+        margin: 0 auto;
+        background: rgba(255, 255, 255, 0.1);
+        padding: 30px;
+        border-radius: 15px;
+        backdrop-filter: blur(10px);
+      }
+      h1 {
+        text-align: center;
+        margin-bottom: 30px;
+      }
+      .section {
+        margin-bottom: 25px;
+        padding: 20px;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 10px;
+      }
+      .section h2 {
+        color: #ffd700;
+        margin-bottom: 15px;
+      }
+      .section p {
+        line-height: 1.6;
+        margin-bottom: 10px;
+      }
+      .highlight {
+        background: rgba(255, 215, 0, 0.2);
+        padding: 2px 6px;
+        border-radius: 4px;
+      }
+      .code {
+        background: rgba(0, 0, 0, 0.3);
+        padding: 15px;
+        border-radius: 8px;
+        font-family: "Courier New", monospace;
+        margin: 10px 0;
+        overflow-x: auto;
+      }
+      .note {
+        background: rgba(0, 255, 255, 0.1);
+        border-left: 4px solid #00ffff;
+        padding: 15px;
+        margin: 15px 0;
+        border-radius: 0 8px 8px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="content">
+      <h1>🚀 Vue3 Content Script 测试页面</h1>
+
+      <div class="section">
+        <h2>📋 测试说明</h2>
+        <p>这个页面用于测试Vue3 Content Script的功能。你应该能看到：</p>
+        <ul>
+          <li>
+            右下角的<span class="highlight">悬浮球</span
+            >（如果启用了悬浮球功能）
+          </li>
+          <li>点击悬浮球后弹出的<span class="highlight">Vue3对话框</span></li>
+          <li>对话框中的<span class="highlight">Vue3组件</span>功能</li>
+        </ul>
+      </div>
+
+      <div class="section">
+        <h2>🔧 技术特性</h2>
+        <p>这个Vue3 Content Script包含以下特性：</p>
+        <div class="code">
+          - Vue3 Composition API - TypeScript 支持 - 响应式数据绑定 - 组件化架构
+          - 拖拽和调整大小功能 - Markdown 渲染支持 - Chrome Extension API 集成
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>📝 示例内容</h2>
+        <p>
+          这是一段示例文本，用于测试AI助手的理解能力。你可以通过Vue3对话框询问关于这个页面的任何问题。
+        </p>
+        <p>
+          页面包含了多个部分，每个部分都有不同的内容和样式。AI助手应该能够理解这些内容并回答相关问题。
+        </p>
+      </div>
+
+      <div class="section">
+        <h2>🎯 测试用例</h2>
+        <p>你可以尝试以下测试用例：</p>
+        <ol>
+          <li>点击悬浮球打开对话框</li>
+          <li>询问"这个页面的主要内容是什么？"</li>
+          <li>测试拖拽对话框功能</li>
+          <li>测试调整对话框大小功能</li>
+          <li>测试Markdown渲染功能</li>
+        </ol>
+      </div>
+
+      <div class="note">
+        <strong>💡 提示：</strong> 如果Vue3 Content
+        Script正常工作，你应该能看到一个现代化的、功能完整的AI助手界面，而不是传统的DOM操作界面。
+      </div>
+
+      <div class="section">
+        <h2>🔍 技术细节</h2>
+        <p>这个实现使用了以下技术栈：</p>
+        <div class="code">
+          Vue 3.5.21 + TypeScript WXT Framework Element Plus UI Marked.js
+          (Markdown渲染) Chrome Extension APIs
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // 页面加载完成后的提示
+      console.log("Vue3 Content Script 测试页面已加载");
+      console.log("请检查右下角是否有悬浮球，以及Vue3组件是否正常工作");
+    </script>
+  </body>
+</html>

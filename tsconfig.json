@@ -1,0 +1,19 @@
+{
+  "extends": "./.wxt/tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/core/*": ["src/core/*"],
+      "@/content/*": ["modules/content-extractor/*"],
+      "@/background/*": ["entrypoints/*"],
+      "@/popup/*": ["entrypoints/popup/*"],
+      "@/sidebar/*": ["entrypoints/sidebar/*"],
+      "@/options/*": ["entrypoints/options/*"],
+      "@/types/*": ["src/types/*"],
+      "@/styles/*": ["styles/*"],
+      "@/stores/*": ["src/stores/*"],
+      "@/*": ["*"]
+    },
+    "strict": true
+  }
+}
