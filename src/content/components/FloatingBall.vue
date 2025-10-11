@@ -1,71 +1,68 @@
 <template>
-  <el-button
-    v-if="visible"
-    id="ai-assistant-ball"
-    class="floating-ball"
-    type="primary"
-    :icon="ChatDotRound"
-    circle
-    size="large"
-    @click="handleClick"
-    :title="'AI助手 - 点击开始对话'"
-  />
+  <div v-if="visible" class="floating-ball" @click="handleClick">
+    <el-icon class="ball-icon">
+      <MagicStick />
+    </el-icon>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from "vue";
-import { ElButton } from "element-plus";
-import { ChatDotRound } from "@element-plus/icons-vue";
-
-// 声明chrome类型
-declare const chrome: any;
+import { MagicStick } from "@element-plus/icons-vue";
 
 interface Props {
   visible?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  visible: true,
+  visible: false,
 });
 
 const emit = defineEmits<{
   click: [];
 }>();
 
-const handleClick = (e: MouseEvent) => {
-  e.stopPropagation();
+// 处理点击
+function handleClick() {
   emit("click");
-};
-
-const handleMouseEnter = () => {
-  const ball = document.getElementById("ai-assistant-ball");
-  if (ball) {
-    ball.style.transform = "scale(1.1)";
-    ball.style.boxShadow = "0 6px 25px rgba(102, 126, 234, 0.6)";
-  }
-};
-
-const handleMouseLeave = () => {
-  const ball = document.getElementById("ai-assistant-ball");
-  if (ball) {
-    ball.style.transform = "scale(1)";
-    ball.style.boxShadow = "0 4px 20px rgba(102, 126, 234, 0.4)";
-  }
-};
+}
 </script>
 
 <style scoped>
 .floating-ball {
   position: fixed;
-  bottom: 20px;
   right: 20px;
-  z-index: 2147483647;
-  box-shadow: 0 4px 20px rgba(64, 158, 255, 0.4);
+  bottom: 20px;
+  width: 48px;
+  height: 48px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 32px rgba(102, 126, 234, 0.3),
+    0 0 0 1px rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.3);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 10000;
+  user-select: none;
+  backdrop-filter: blur(20px);
 }
 
 .floating-ball:hover {
-  transform: scale(1.1);
-  box-shadow: 0 6px 25px rgba(64, 158, 255, 0.6);
+  transform: scale(1.05);
+  box-shadow: 0 12px 40px rgba(102, 126, 234, 0.4),
+    0 0 0 1px rgba(255, 255, 255, 0.3);
+  background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%);
+}
+
+.floating-ball:active {
+  transform: scale(0.95);
+}
+
+.ball-icon {
+  color: white;
+  font-size: 20px;
+  filter: drop-shadow(0 1px 2px rgba(255, 255, 255, 0.5));
 }
 </style>

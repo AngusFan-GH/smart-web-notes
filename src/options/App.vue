@@ -198,35 +198,19 @@ import {
   ElTabPane,
 } from "element-plus";
 import { Setting, Connection, Refresh, Check } from "@element-plus/icons-vue";
+import {
+  DEFAULT_SETTINGS,
+  API_CONFIG_INFO,
+} from "../shared/constants/defaults";
 
 // 声明chrome类型
 declare const chrome: any;
 
 // API类型的默认配置
-const apiConfigs = {
-  custom: {
-    apiBase: "https://api.deepseek.com/chat/completions",
-    modelPlaceholder: "deepseek-chat",
-    requiresKey: true,
-    apiBasePlaceholder: "https://api.deepseek.com/chat/completions",
-    apiKeyPlaceholder: "请输入API密钥",
-    modelHelp: "例如：deepseek-chat、gpt-4等",
-  },
-};
+const apiConfigs = API_CONFIG_INFO;
 
 // 设置数据
-const settings = reactive({
-  autoHideDialog: true,
-  enableContext: true,
-  maxContextRounds: 3,
-  systemPrompt: "你是一个帮助理解网页内容的AI助手。请使用Markdown格式回复。",
-  apiType: "custom",
-  custom_apiKey: "",
-  custom_apiBase: "https://api.deepseek.com/chat/completions",
-  custom_model: "deepseek-chat",
-  maxTokens: 2048,
-  temperature: 0.7,
-});
+const settings = reactive({ ...DEFAULT_SETTINGS });
 
 const activeTab = ref("api");
 const isLoading = ref(false);
@@ -251,18 +235,7 @@ watch(activeTab, () => {
 // 加载设置
 async function loadSettings() {
   try {
-    const result = await chrome.storage.sync.get({
-      autoHideDialog: true,
-      enableContext: true,
-      maxContextRounds: 3,
-      systemPrompt: "",
-      apiKey: "",
-      apiBase: "https://api.deepseek.com/chat/completions",
-      model: "deepseek-chat",
-      maxTokens: 2048,
-      temperature: 0.7,
-    });
-
+    const result = await chrome.storage.sync.get(DEFAULT_SETTINGS);
     Object.assign(settings, result);
   } catch (error) {
     console.error("加载设置失败:", error);
@@ -290,64 +263,55 @@ function toggleApiKeyVisibility() {
 // 测试API配置
 async function testApiConfig() {
   try {
-    const apiKey = settings.custom_apiKey;
-    const apiBase = settings.custom_apiBase;
-    const model = settings.custom_model;
+    // 验证设置
+    if (!settings.custom_apiKey) {
+      throw new Error("API密钥未设置");
+    }
+    if (!settings.custom_apiBase) {
+      throw new Error("API地址未设置");
+    }
+    if (!settings.custom_model) {
+      throw new Error("模型名称未设置");
+    }
 
-    // 设置基础headers
-    let headers: Record<string, string> = {
+    // 构建测试请求
+    const request = {
+      model: settings.custom_model,
+      messages: [
+        {
+          role: "user",
+          content: "Hello, please respond with 'API test successful' to confirm the connection is working."
+        }
+      ],
+      max_tokens: 50,
+      temperature: 0.1,
+    };
+
+    const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
 
-    // 添加Authorization头
-    if (!apiKey) {
-      throw new Error("API密钥是必填项");
+    if (settings.custom_apiKey) {
+      headers["Authorization"] = `Bearer ${settings.custom_apiKey}`;
     }
-    headers["Authorization"] = `Bearer ${apiKey}`;
 
-    // OpenAI 兼容请求体
-    const requestBody: any = {
-      model: model,
-      messages: [
-        { role: "system", content: "你是一个帮助理解网页内容的AI助手。" },
-        { role: "user", content: "这是一条测试消息，请回复：API配置测试成功" },
-      ],
-      max_tokens: 50,
-      temperature: 0.7,
-      stream: false, // 测试API配置时不需要流式响应
-    };
-
-    console.log("🧪 [API测试] 发送测试请求:", {
-      url: apiBase,
-      model: model,
-      stream: false, // 明确标识这是测试请求
-    });
-
-    const response = await fetch(apiBase, {
+    // 发送测试请求
+    const response = await fetch(settings.custom_apiBase, {
       method: "POST",
-      headers: headers,
-      body: JSON.stringify(requestBody),
+      headers,
+      body: JSON.stringify(request),
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      try {
-        const errorJson = JSON.parse(errorText);
-        throw new Error(errorJson.error?.message || "请求失败");
-      } catch (e) {
-        throw new Error(`请求失败: ${response.status} ${response.statusText}`);
-      }
+      throw new Error(`API请求失败: ${response.status} ${response.statusText}`);
     }
 
     const data = await response.json();
-
-    if (data.choices && data.choices[0] && data.choices[0].message) {
-      return data.choices[0].message.content;
-    } else {
-      throw new Error("API响应格式不正确");
-    }
+    const content = data.choices?.[0]?.message?.content || data.message?.content || "API响应格式异常";
+    
+    return content;
   } catch (error) {
-    throw error;
+    throw new Error(error instanceof Error ? error.message : "API测试失败");
   }
 }
 
@@ -378,17 +342,7 @@ async function saveAndTest() {
 
 // 重置设置
 function resetSettings() {
-  Object.assign(settings, {
-    autoHideDialog: true,
-    enableContext: true,
-    maxContextRounds: 3,
-    systemPrompt: "",
-    custom_apiKey: "sk-d0297f69db424456942275de346f5375",
-    custom_apiBase: "https://api.deepseek.com/chat/completions",
-    custom_model: "deepseek-chat",
-    maxTokens: 2048,
-    temperature: 0.7,
-  });
+  Object.assign(settings, DEFAULT_SETTINGS);
   statusMessage.value = "";
 }
 </script>

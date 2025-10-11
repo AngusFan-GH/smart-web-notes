@@ -2,61 +2,197 @@
   <div class="container">
     <div class="header">
       <h3 class="title">Smart Web Notes</h3>
+      <div class="status-indicator" :class="statusClass">
+        <el-icon class="status-icon">
+          <component :is="statusIcon" />
+        </el-icon>
+        <span class="status-text">{{ statusText }}</span>
+      </div>
     </div>
 
     <div class="quick-actions">
+      <!-- 主要操作按钮 -->
       <el-button
-        type="primary"
-        :icon="ChatDotRound"
-        @click="openChatDialog"
-        class="action-button"
+        :type="primaryAction.type as any"
+        :icon="primaryAction.icon"
+        @click="primaryAction.action"
+        class="action-button primary-action"
       >
-        打开对话窗口
+        {{ primaryAction.text }}
       </el-button>
 
+      <!-- 次要操作按钮 -->
+      <el-button
+        v-if="secondaryAction"
+        type="default"
+        :icon="secondaryAction.icon"
+        @click="secondaryAction.action"
+        class="action-button secondary-action"
+      >
+        {{ secondaryAction.text }}
+      </el-button>
+
+      <!-- 设置按钮 -->
       <el-button
         type="default"
         :icon="Setting"
         @click="openSettings"
-        class="action-button"
+        class="action-button settings-button"
       >
         设置
-      </el-button>
-
-      <el-button
-        type="default"
-        :icon="showFloatingBall ? View : Hide"
-        @click="toggleFloatingBall"
-        class="action-button"
-      >
-        {{ showFloatingBall ? "隐藏悬浮球" : "显示悬浮球" }}
       </el-button>
     </div>
 
     <div class="footer">
-      <p class="tip">💡 点击悬浮球或使用快捷键开始对话</p>
+      <p class="tip">{{ footerTip }}</p>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
-import { ElButton } from "element-plus";
-import { ChatDotRound, Setting, View, Hide } from "@element-plus/icons-vue";
-import { renderMarkdown } from "../shared/utils/markdown";
+import { ref, onMounted, computed } from "vue";
+import { ElButton, ElIcon } from "element-plus";
+import {
+  ChatDotRound,
+  Setting,
+  View,
+  Hide,
+  Close,
+  CircleCheck,
+  Warning,
+} from "@element-plus/icons-vue";
 
 // 声明chrome类型
 declare const chrome: any;
 
+// 状态管理
 const showFloatingBall = ref(true);
+const isDialogOpen = ref(false);
+const isLoading = ref(false);
+
+// 状态计算
+const statusClass = computed(() => {
+  if (isLoading.value) return "loading";
+  if (isDialogOpen.value) return "active";
+  if (!showFloatingBall.value) return "hidden";
+  return "ready";
+});
+
+const statusIcon = computed(() => {
+  if (isLoading.value) return Warning;
+  if (isDialogOpen.value) return CircleCheck;
+  if (!showFloatingBall.value) return Hide;
+  return View;
+});
+
+const statusText = computed(() => {
+  if (isLoading.value) return "加载中...";
+  if (isDialogOpen.value) return "对话已打开";
+  if (!showFloatingBall.value) return "悬浮球已隐藏";
+  return "就绪";
+});
+
+// 主要操作按钮
+const primaryAction = computed(() => {
+  if (isDialogOpen.value) {
+    return {
+      type: "danger",
+      icon: Close,
+      text: "关闭对话",
+      action: closeDialog,
+    };
+  }
+
+  if (!showFloatingBall.value) {
+    return {
+      type: "primary",
+      icon: View,
+      text: "显示悬浮球",
+      action: showFloatingBallAction,
+    };
+  }
+
+  return {
+    type: "primary",
+    icon: ChatDotRound,
+    text: "快速对话",
+    action: openChatDialog,
+  };
+});
+
+// 次要操作按钮
+const secondaryAction = computed(() => {
+  if (isDialogOpen.value) {
+    return {
+      icon: Hide,
+      text: "隐藏悬浮球",
+      action: hideFloatingBallAction,
+    };
+  }
+
+  if (showFloatingBall.value) {
+    return {
+      icon: Hide,
+      text: "隐藏悬浮球",
+      action: hideFloatingBallAction,
+    };
+  }
+
+  return null;
+});
+
+// 底部提示
+const footerTip = computed(() => {
+  if (isDialogOpen.value) {
+    return "💬 对话窗口已打开，可以开始交流";
+  }
+
+  if (!showFloatingBall.value) {
+    return "💡 悬浮球已隐藏，点击按钮重新显示";
+  }
+
+  return "💡 点击悬浮球或使用快捷键开始对话";
+});
 
 // 初始化
 onMounted(async () => {
-  // 初始化悬浮球开关状态
-  const { showFloatingBall: storedValue = true } =
-    await chrome.storage.sync.get("showFloatingBall");
-  showFloatingBall.value = storedValue;
+  isLoading.value = true;
+
+  try {
+    // 获取悬浮球状态
+    const { showFloatingBall: storedValue = true } =
+      await chrome.storage.sync.get("showFloatingBall");
+    showFloatingBall.value = storedValue;
+
+    // 检查对话窗口状态
+    await checkDialogStatus();
+  } catch (error) {
+    console.error("初始化失败:", error);
+  } finally {
+    isLoading.value = false;
+  }
 });
+
+// 检查对话窗口状态
+async function checkDialogStatus() {
+  try {
+    const [tab] = await chrome.tabs.query({
+      active: true,
+      currentWindow: true,
+    });
+
+    if (tab.id) {
+      // 向content script查询对话窗口状态
+      const response = await chrome.tabs.sendMessage(tab.id, {
+        action: "getDialogStatus",
+      });
+      isDialogOpen.value = response?.isOpen || false;
+    }
+  } catch (error) {
+    console.error("检查对话状态失败:", error);
+    isDialogOpen.value = false;
+  }
+}
 
 // 打开对话窗口
 async function openChatDialog() {
@@ -66,9 +202,8 @@ async function openChatDialog() {
       currentWindow: true,
     });
     if (tab.id) {
-      // 向content script发送消息打开对话窗口
       await chrome.tabs.sendMessage(tab.id, { action: "openDialog" });
-      // 关闭popup
+      isDialogOpen.value = true;
       window.close();
     }
   } catch (error) {
@@ -76,28 +211,68 @@ async function openChatDialog() {
   }
 }
 
-// 打开设置页面
-function openSettings() {
-  chrome.runtime.openOptionsPage();
-}
-
-// 切换悬浮球
-async function toggleFloatingBall() {
-  showFloatingBall.value = !showFloatingBall.value;
-  await chrome.storage.sync.set({ showFloatingBall: showFloatingBall.value });
-
-  // 向content script发送消息
+// 关闭对话窗口
+async function closeDialog() {
   try {
     const [tab] = await chrome.tabs.query({
       active: true,
       currentWindow: true,
     });
     if (tab.id) {
-      chrome.tabs.sendMessage(tab.id, { action: "toggleFloatingBall" });
+      await chrome.tabs.sendMessage(tab.id, { action: "closeDialog" });
+      isDialogOpen.value = false;
+      window.close();
     }
   } catch (error) {
-    console.error("切换悬浮球失败:", error);
+    console.error("关闭对话窗口失败:", error);
   }
+}
+
+// 显示悬浮球
+async function showFloatingBallAction() {
+  showFloatingBall.value = true;
+  await chrome.storage.sync.set({ showFloatingBall: true });
+
+  try {
+    const [tab] = await chrome.tabs.query({
+      active: true,
+      currentWindow: true,
+    });
+    if (tab.id) {
+      await chrome.tabs.sendMessage(tab.id, {
+        action: "toggleFloatingBall",
+        showFloatingBall: true,
+      });
+    }
+  } catch (error) {
+    console.error("显示悬浮球失败:", error);
+  }
+}
+
+// 隐藏悬浮球
+async function hideFloatingBallAction() {
+  showFloatingBall.value = false;
+  await chrome.storage.sync.set({ showFloatingBall: false });
+
+  try {
+    const [tab] = await chrome.tabs.query({
+      active: true,
+      currentWindow: true,
+    });
+    if (tab.id) {
+      await chrome.tabs.sendMessage(tab.id, {
+        action: "toggleFloatingBall",
+        showFloatingBall: false,
+      });
+    }
+  } catch (error) {
+    console.error("隐藏悬浮球失败:", error);
+  }
+}
+
+// 打开设置页面
+function openSettings() {
+  chrome.runtime.openOptionsPage();
 }
 </script>
 
@@ -119,7 +294,7 @@ async function toggleFloatingBall() {
 }
 
 .header {
-  padding: 10px;
+  padding: 12px;
 
   text-align: center;
 
@@ -133,8 +308,57 @@ async function toggleFloatingBall() {
   font-size: 18px;
   font-weight: 700;
 
+  margin: 0 0 8px 0;
+
   color: white;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+
+  font-size: 12px;
+  font-weight: 500;
+
+  padding: 4px 8px;
+  border-radius: 12px;
+
+  transition: all 0.3s ease;
+}
+
+.status-indicator.ready {
+  color: rgba(76, 175, 80, 0.9);
+  background: rgba(76, 175, 80, 0.1);
+  border: 1px solid rgba(76, 175, 80, 0.2);
+}
+
+.status-indicator.active {
+  color: rgba(33, 150, 243, 0.9);
+  background: rgba(33, 150, 243, 0.1);
+  border: 1px solid rgba(33, 150, 243, 0.2);
+}
+
+.status-indicator.hidden {
+  color: rgba(255, 152, 0, 0.9);
+  background: rgba(255, 152, 0, 0.1);
+  border: 1px solid rgba(255, 152, 0, 0.2);
+}
+
+.status-indicator.loading {
+  color: rgba(156, 39, 176, 0.9);
+  background: rgba(156, 39, 176, 0.1);
+  border: 1px solid rgba(156, 39, 176, 0.2);
+}
+
+.status-icon {
+  font-size: 14px;
+}
+
+.status-text {
+  font-size: 11px;
 }
 
 .subtitle {
@@ -182,15 +406,42 @@ async function toggleFloatingBall() {
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
 }
 
-.action-button:first-child {
-  color: #667eea;
+.primary-action {
+  color: white;
   border-color: rgba(255, 255, 255, 0.3);
-  background: rgba(255, 255, 255, 0.9);
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.2) 0%,
+    rgba(255, 255, 255, 0.1) 100%
+  );
 }
 
-.action-button:not(:first-child) {
+.primary-action:hover {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.3) 0%,
+    rgba(255, 255, 255, 0.2) 100%
+  );
+}
+
+.secondary-action {
   color: white;
   background: rgba(255, 255, 255, 0.15);
+}
+
+.secondary-action:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.settings-button {
+  color: white;
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.settings-button:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.25);
 }
 
 .footer {

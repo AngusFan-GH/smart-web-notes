@@ -15,32 +15,29 @@ export default defineConfig({
         "@/shared": path.resolve(__dirname, "src/shared"),
       },
     },
+    define: {
+      global: "globalThis",
+    },
     build: {
       rollupOptions: {
         output: {
           format: "es",
-          // 确保文件编码
-          banner: "// UTF-8",
+          entryFileNames: "[name].js",
+          chunkFileNames: "[name].js",
+          assetFileNames: "[name].[ext]",
         },
       },
     },
   }),
   manifest: {
     name: "Smart Web Notes",
-    description: "基于当前网页内容的AI增强问答系统",
+    description: "AI-powered web content analysis",
     version: "1.0",
     permissions: ["activeTab", "scripting", "storage"],
     content_scripts: [
       {
         matches: ["<all_urls>"],
-        js: ["lib/marked.min.js", "content-scripts/content.js"],
-        css: ["styles/content.css"],
-      },
-    ],
-    web_accessible_resources: [
-      {
-        resources: ["lib/marked.min.js"],
-        matches: ["<all_urls>"],
+        js: ["content-scripts/content.js"],
       },
     ],
   },

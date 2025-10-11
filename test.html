@@ -3,130 +3,254 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Vue3 Content Script 测试页面</title>
+    <title>Smart Web Notes 测试页面</title>
     <style>
       body {
-        font-family: Arial, sans-serif;
-        padding: 20px;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        min-height: 100vh;
-      }
-      .content {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          sans-serif;
+        line-height: 1.6;
         max-width: 800px;
         margin: 0 auto;
-        background: rgba(255, 255, 255, 0.1);
-        padding: 30px;
-        border-radius: 15px;
-        backdrop-filter: blur(10px);
-      }
-      h1 {
-        text-align: center;
-        margin-bottom: 30px;
-      }
-      .section {
-        margin-bottom: 25px;
         padding: 20px;
-        background: rgba(255, 255, 255, 0.05);
-        border-radius: 10px;
+        background-color: #f5f5f5;
       }
-      .section h2 {
-        color: #ffd700;
-        margin-bottom: 15px;
+      .container {
+        background: white;
+        padding: 30px;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
       }
-      .section p {
-        line-height: 1.6;
-        margin-bottom: 10px;
-      }
-      .highlight {
-        background: rgba(255, 215, 0, 0.2);
-        padding: 2px 6px;
-        border-radius: 4px;
-      }
-      .code {
-        background: rgba(0, 0, 0, 0.3);
-        padding: 15px;
+      .test-section {
+        margin: 20px 0;
+        padding: 20px;
+        background: #f8f9fa;
         border-radius: 8px;
-        font-family: "Courier New", monospace;
-        margin: 10px 0;
-        overflow-x: auto;
+        border-left: 4px solid #007bff;
       }
-      .note {
-        background: rgba(0, 255, 255, 0.1);
-        border-left: 4px solid #00ffff;
+      .test-button {
+        background: #007bff;
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        border-radius: 6px;
+        cursor: pointer;
+        margin: 10px 5px;
+        font-size: 16px;
+      }
+      .test-button:hover {
+        background: #0056b3;
+      }
+      .test-button:disabled {
+        background: #6c757d;
+        cursor: not-allowed;
+      }
+      .status {
+        margin: 15px 0;
+        padding: 12px;
+        border-radius: 6px;
+        font-weight: bold;
+      }
+      .status.success {
+        background: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+      }
+      .status.error {
+        background: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+      }
+      .status.info {
+        background: #d1ecf1;
+        color: #0c5460;
+        border: 1px solid #bee5eb;
+      }
+      .log {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
         padding: 15px;
         margin: 15px 0;
-        border-radius: 0 8px 8px 0;
+        font-family: "Courier New", monospace;
+        font-size: 14px;
+        max-height: 300px;
+        overflow-y: auto;
+      }
+      .content-sample {
+        background: #e9ecef;
+        padding: 15px;
+        border-radius: 6px;
+        margin: 10px 0;
+        font-family: "Courier New", monospace;
+        font-size: 12px;
+        max-height: 200px;
+        overflow-y: auto;
       }
     </style>
   </head>
   <body>
-    <div class="content">
-      <h1>🚀 Vue3 Content Script 测试页面</h1>
+    <div class="container">
+      <h1>🧪 Smart Web Notes 扩展测试页面</h1>
 
-      <div class="section">
-        <h2>📋 测试说明</h2>
-        <p>这个页面用于测试Vue3 Content Script的功能。你应该能看到：</p>
-        <ul>
-          <li>
-            右下角的<span class="highlight">悬浮球</span
-            >（如果启用了悬浮球功能）
-          </li>
-          <li>点击悬浮球后弹出的<span class="highlight">Vue3对话框</span></li>
-          <li>对话框中的<span class="highlight">Vue3组件</span>功能</li>
-        </ul>
+      <div class="test-section">
+        <h3>📋 测试说明</h3>
+        <p>
+          这个页面用于测试 Smart Web Notes
+          扩展的流式对话功能。请确保扩展已安装并启用。
+        </p>
       </div>
 
-      <div class="section">
-        <h2>🔧 技术特性</h2>
-        <p>这个Vue3 Content Script包含以下特性：</p>
-        <div class="code">
-          - Vue3 Composition API - TypeScript 支持 - 响应式数据绑定 - 组件化架构
-          - 拖拽和调整大小功能 - Markdown 渲染支持 - Chrome Extension API 集成
+      <div class="test-section">
+        <h3>🔧 功能测试</h3>
+        <button class="test-button" onclick="testExtension()">
+          测试扩展通信
+        </button>
+        <button class="test-button" onclick="testStreaming()">
+          测试流式对话
+        </button>
+        <button class="test-button" onclick="clearLog()">清空日志</button>
+        <div id="status" class="status" style="display: none"></div>
+      </div>
+
+      <div class="test-section">
+        <h3>📊 测试日志</h3>
+        <div class="log" id="log">
+          <div>等待测试...</div>
         </div>
       </div>
 
-      <div class="section">
-        <h2>📝 示例内容</h2>
-        <p>
-          这是一段示例文本，用于测试AI助手的理解能力。你可以通过Vue3对话框询问关于这个页面的任何问题。
-        </p>
-        <p>
-          页面包含了多个部分，每个部分都有不同的内容和样式。AI助手应该能够理解这些内容并回答相关问题。
-        </p>
+      <div class="test-section">
+        <h3>📄 页面内容示例</h3>
+        <p>以下内容将作为上下文提供给AI助手：</p>
+        <div class="content-sample" id="contentSample">
+          <h4>Vue.js 3.0 新特性</h4>
+          <p>Vue.js 3.0 是一个重大的版本更新，带来了许多新特性和改进：</p>
+          <ul>
+            <li><strong>Composition API</strong> - 提供了更灵活的组合式API</li>
+            <li><strong>更好的TypeScript支持</strong> - 原生支持TypeScript</li>
+            <li><strong>性能提升</strong> - 更快的渲染和更小的包体积</li>
+            <li><strong>Tree-shaking</strong> - 更好的按需加载支持</li>
+          </ul>
+          <h4>主要改进</h4>
+          <p>Vue 3.0 在以下方面有显著改进：</p>
+          <ol>
+            <li>响应式系统重写，使用Proxy替代Object.defineProperty</li>
+            <li>虚拟DOM算法优化，提升渲染性能</li>
+            <li>支持多个根节点</li>
+            <li>更好的开发工具支持</li>
+          </ol>
+        </div>
       </div>
 
-      <div class="section">
-        <h2>🎯 测试用例</h2>
-        <p>你可以尝试以下测试用例：</p>
+      <div class="test-section">
+        <h3>📝 使用步骤</h3>
         <ol>
-          <li>点击悬浮球打开对话框</li>
-          <li>询问"这个页面的主要内容是什么？"</li>
-          <li>测试拖拽对话框功能</li>
-          <li>测试调整对话框大小功能</li>
-          <li>测试Markdown渲染功能</li>
+          <li>确保 Smart Web Notes 扩展已安装并启用</li>
+          <li>点击"测试扩展通信"按钮，确认扩展正常工作</li>
+          <li>点击"测试流式对话"按钮，测试AI对话功能</li>
+          <li>观察日志输出，确认流式响应正常</li>
+          <li>如果测试通过，可以正常使用扩展的对话功能</li>
         </ol>
-      </div>
-
-      <div class="note">
-        <strong>💡 提示：</strong> 如果Vue3 Content
-        Script正常工作，你应该能看到一个现代化的、功能完整的AI助手界面，而不是传统的DOM操作界面。
-      </div>
-
-      <div class="section">
-        <h2>🔍 技术细节</h2>
-        <p>这个实现使用了以下技术栈：</p>
-        <div class="code">
-          Vue 3.5.21 + TypeScript WXT Framework Element Plus UI Marked.js
-          (Markdown渲染) Chrome Extension APIs
-        </div>
       </div>
     </div>
 
     <script>
-      // 页面加载完成后的提示
-      console.log("Vue3 Content Script 测试页面已加载");
-      console.log("请检查右下角是否有悬浮球，以及Vue3组件是否正常工作");
+      function log(message, type = "info") {
+        const logElement = document.getElementById("log");
+        const timestamp = new Date().toLocaleTimeString();
+        const logEntry = document.createElement("div");
+        logEntry.innerHTML = `[${timestamp}] ${message}`;
+        logEntry.style.color =
+          type === "error"
+            ? "#dc3545"
+            : type === "success"
+            ? "#28a745"
+            : "#6c757d";
+        logElement.appendChild(logEntry);
+        logElement.scrollTop = logElement.scrollHeight;
+      }
+
+      function showStatus(message, type = "info") {
+        const statusElement = document.getElementById("status");
+        statusElement.textContent = message;
+        statusElement.className = `status ${type}`;
+        statusElement.style.display = "block";
+      }
+
+      function clearLog() {
+        document.getElementById("log").innerHTML = "<div>日志已清空...</div>";
+      }
+
+      function testExtension() {
+        log("开始测试扩展通信...");
+
+        if (typeof chrome === "undefined" || !chrome.runtime) {
+          log("❌ Chrome扩展API不可用", "error");
+          showStatus("Chrome扩展API不可用", "error");
+          return;
+        }
+
+        log("✅ Chrome扩展API可用");
+
+        chrome.runtime.sendMessage(
+          { action: "testCommunication" },
+          (response) => {
+            if (chrome.runtime.lastError) {
+              log(
+                "❌ 扩展通信失败: " + chrome.runtime.lastError.message,
+                "error"
+              );
+              showStatus("扩展通信失败", "error");
+            } else {
+              log("✅ 扩展通信成功: " + JSON.stringify(response), "success");
+              showStatus("扩展通信测试通过", "success");
+            }
+          }
+        );
+      }
+
+      function testStreaming() {
+        log("开始测试流式对话...");
+
+        if (typeof chrome === "undefined" || !chrome.runtime) {
+          log("❌ Chrome扩展API不可用", "error");
+          showStatus("Chrome扩展API不可用", "error");
+          return;
+        }
+
+        // 获取页面内容
+        const pageContent = document.getElementById("contentSample").innerText;
+
+        // 发送测试消息
+        chrome.runtime.sendMessage(
+          {
+            action: "generateAnswer",
+            data: {
+              question: "请总结这个页面的主要内容",
+              pageContent: pageContent,
+              tabId: "current",
+            },
+          },
+          (response) => {
+            if (chrome.runtime.lastError) {
+              log(
+                "❌ 发送消息失败: " + chrome.runtime.lastError.message,
+                "error"
+              );
+              showStatus("发送消息失败", "error");
+            } else {
+              log("✅ 消息发送成功: " + JSON.stringify(response), "success");
+              showStatus("流式对话测试已启动，请观察扩展对话框", "success");
+            }
+          }
+        );
+      }
+
+      // 页面加载完成
+      document.addEventListener("DOMContentLoaded", function () {
+        log("测试页面加载完成");
+        log("请确保Smart Web Notes扩展已安装并启用");
+      });
     </script>
   </body>
 </html>

@@ -1,128 +1,66 @@
 <template>
   <div
     v-if="visible"
-    class="custom-dialog-overlay"
-    @mousedown="handleOverlayClick"
+    class="custom-dialog"
+    :style="dialogStyle"
+    @mousedown="handleDialogMouseDown"
   >
-    <div
-      class="custom-dialog"
-      :style="dialogStyle"
-      @mousedown="handleDialogMouseDown"
-    >
-      <!-- 对话框头部 -->
-      <div class="dialog-header" @mousedown="handleHeaderMouseDown">
-        <div class="dialog-title">
-          <el-icon><ChatDotRound /></el-icon>
-          <span>Smart Web Notes</span>
-        </div>
-        <div class="dialog-controls">
-          <el-button
-            @click="minimize"
-            type="text"
-            size="small"
-            :icon="Minus"
-            circle
-            class="control-btn"
-          />
-          <el-button
-            @click="close"
-            type="text"
-            size="small"
-            :icon="Close"
-            circle
-            class="control-btn"
-          />
-        </div>
-      </div>
+    <!-- 对话框头部 -->
+    <DialogHeader @close="close" @header-mousedown="handleHeaderMouseDown" />
 
-      <!-- 对话框内容 -->
-      <div class="dialog-content">
-        <div class="chat-container">
-          <div class="messages" ref="messagesContainer">
-            <el-empty
-              v-if="messages.length === 0"
-              description="👋 你好！我是AI助手，可以帮你理解和分析当前网页的内容。"
-              :image-size="80"
-            />
-
-            <div
-              v-for="(message, index) in messages"
-              :key="index"
-              :class="[
-                'message',
-                message.isUser ? 'user-message' : 'assistant-message',
-              ]"
-              v-html="
-                message.isUser
-                  ? message.content
-                  : renderMarkdownContent(message.content)
-              "
-            ></div>
-
-            <div v-if="isGenerating || isStreaming" class="loading-message">
-              <el-icon class="is-loading">
-                <Loading />
-              </el-icon>
-              <span>{{
-                isStreaming ? "AI正在回复中..." : "AI正在思考中..."
-              }}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- 对话框底部 -->
-      <div class="dialog-footer">
-        <div class="input-container">
-          <el-input
-            v-model="userInput"
-            type="textarea"
-            :rows="2"
-            placeholder="请输入您的问题..."
-            :disabled="isGenerating"
-            @keydown="handleKeydown"
-            resize="none"
-            class="message-input"
-          />
-          <el-button
-            type="primary"
-            :icon="ArrowRight"
-            :loading="isGenerating"
-            :disabled="!userInput.trim()"
-            @click="sendMessage"
-            class="send-button"
-          />
-        </div>
-      </div>
-
-      <!-- 调整大小手柄 -->
-      <div class="resize-handle" @mousedown="handleResizeStart"></div>
+    <!-- 对话框内容 -->
+    <div class="dialog-content">
+      <ChatMessages
+        :messages="appState.messages.value"
+        :is-processing="appState.isProcessing.value"
+        :is-streaming="appState.isStreaming.value"
+      />
     </div>
+
+    <!-- 对话框底部 -->
+    <div class="dialog-footer">
+      <ChatInput
+        ref="chatInputRef"
+        v-model="userInput"
+        :disabled="appState.isProcessing.value"
+        :is-loading="appState.isProcessing.value"
+        @submit="sendMessage"
+        @keydown="handleKeydown"
+        @stop="stopGeneration"
+      />
+    </div>
+
+    <!-- 调整大小手柄 -->
+    <!-- 右下角 -->
+    <div
+      class="resize-handle resize-handle-se"
+      @mousedown="(event) => handleResizeStart('se', event)"
+    ></div>
+    <!-- 左下角 -->
+    <div
+      class="resize-handle resize-handle-sw"
+      @mousedown="(event) => handleResizeStart('sw', event)"
+    ></div>
+    <!-- 右上角 -->
+    <div
+      class="resize-handle resize-handle-ne"
+      @mousedown="(event) => handleResizeStart('ne', event)"
+    ></div>
+    <!-- 左上角 -->
+    <div
+      class="resize-handle resize-handle-nw"
+      @mousedown="(event) => handleResizeStart('nw', event)"
+    ></div>
   </div>
 </template>
 
 <script setup lang="ts">
-import {
-  ref,
-  reactive,
-  onMounted,
-  onUnmounted,
-  nextTick,
-  computed,
-  watch,
-} from "vue";
-import { ElIcon, ElButton, ElEmpty, ElInput } from "element-plus";
-import {
-  ChatDotRound,
-  Minus,
-  Close,
-  Loading,
-  ArrowRight,
-} from "@element-plus/icons-vue";
-import { useChromeAPI, useWebContent } from "../../shared/composables";
-import { parseWebContent } from "../../shared/utils";
-import { renderMarkdown } from "../../shared/utils/markdown";
-import type { Message, DialogPosition, DialogSize } from "../../shared/types";
+import { ref, reactive, onMounted, onUnmounted, computed } from "vue";
+import { appState, appActions } from "../../shared/stores/appStore";
+import type { ChromeMessage, ChromeResponse } from "../../shared/types";
+import DialogHeader from "./DialogHeader.vue";
+import ChatMessages from "./ChatMessages.vue";
+import ChatInput from "./ChatInput.vue";
 
 // 声明chrome类型
 declare const chrome: any;
@@ -137,19 +75,14 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{
   close: [];
-  minimize: [];
   "update:visible": [value: boolean];
 }>();
 
 // 响应式数据
 const userInput = ref("");
-const messages = ref<Message[]>([]);
-const isGenerating = ref(false);
-const messagesContainer = ref<HTMLElement>();
-const streamingMessage = ref("");
-const isStreaming = ref(false);
+const chatInputRef = ref();
 
-// 对话框位置和大小 - 参考WebChat-main的处理方式
+// 对话框位置和大小
 const dialogPosition = reactive({
   left: "auto",
   top: "auto",
@@ -163,9 +96,9 @@ const dialogSize = reactive({
   minHeight: 400,
 });
 
-// 计算样式 - 参考WebChat-main的样式计算
+// 计算样式
 const dialogStyle = computed(() => ({
-  position: "fixed",
+  position: "fixed" as const,
   right: dialogPosition.isCustomPosition ? "auto" : "20px",
   bottom: dialogPosition.isCustomPosition ? "auto" : "80px",
   left: dialogPosition.isCustomPosition ? dialogPosition.left : "auto",
@@ -178,332 +111,68 @@ const dialogStyle = computed(() => ({
   maxHeight: "80vh",
 }));
 
-// 拖动相关 - 参考WebChat-main
+// 拖动相关
 let isDragging = false;
 let dragCurrentX = 0;
 let dragCurrentY = 0;
 let dragInitialX = 0;
 let dragInitialY = 0;
-let dragAnimationFrame: number | null = null;
 
-// 调整大小相关 - 参考WebChat-main
+// 调整大小相关
 let isResizing = false;
+let resizeDirection = "";
 let resizeInitialX = 0;
 let resizeInitialY = 0;
 let resizeInitialWidth = 0;
 let resizeInitialHeight = 0;
-let resizeAnimationFrame: number | null = null;
+let resizeInitialLeft = 0;
+let resizeInitialTop = 0;
 
 // 初始化
 onMounted(async () => {
-  await loadHistory();
   await loadDialogPosition();
   await loadDialogSize();
-
-  // 监听流式响应事件
-  window.addEventListener("streamChunk", handleStreamChunk);
-  window.addEventListener("streamComplete", handleStreamComplete);
-  window.addEventListener("streamError", handleStreamError);
-
-  // 监听对话框显示状态变化
-  watch(
-    () => props.visible,
-    (newVisible) => {
-      if (newVisible) {
-        nextTick(() => {
-          updateResizeHandlePosition();
-        });
-      }
-    }
-  );
-
-  // 监听对话框位置和尺寸变化
-  watch(
-    [
-      () => dialogPosition.left,
-      () => dialogPosition.top,
-      () => dialogSize.width,
-      () => dialogSize.height,
-    ],
-    () => {
-      if (props.visible) {
-        nextTick(() => {
-          updateResizeHandlePosition();
-        });
-      }
-    }
-  );
 });
 
-// 加载对话框位置 - 参考WebChat-main
+// 加载对话框位置
 async function loadDialogPosition() {
   try {
-    const result = await chrome.storage.sync.get({
-      dialogPosition: {
-        left: "auto",
-        top: "auto",
-        isCustomPosition: false,
-      },
-    });
-
-    if (result.dialogPosition.isCustomPosition) {
-      dialogPosition.left = result.dialogPosition.left;
-      dialogPosition.top = result.dialogPosition.top;
-      dialogPosition.isCustomPosition = true;
+    const result = await chrome.storage.local.get(["dialogPosition"]);
+    if (result.dialogPosition) {
+      Object.assign(dialogPosition, result.dialogPosition);
     }
   } catch (error) {
-    console.error("加载对话框位置失败:", error);
+    console.warn("加载对话框位置失败:", error);
   }
 }
 
-// 加载对话框尺寸 - 参考WebChat-main
+// 保存对话框位置
+async function saveDialogPosition() {
+  try {
+    await chrome.storage.local.set({ dialogPosition });
+  } catch (error) {
+    console.warn("保存对话框位置失败:", error);
+  }
+}
+
+// 加载对话框大小
 async function loadDialogSize() {
   try {
-    const result = await chrome.storage.sync.get({
-      dialogSize: {
-        width: 400,
-        height: 500,
-      },
-    });
-
-    dialogSize.width = result.dialogSize.width;
-    dialogSize.height = result.dialogSize.height;
+    const result = await chrome.storage.local.get(["dialogSize"]);
+    if (result.dialogSize) {
+      Object.assign(dialogSize, result.dialogSize);
+    }
   } catch (error) {
-    console.error("加载对话框尺寸失败:", error);
+    console.warn("加载对话框大小失败:", error);
   }
 }
 
-// 保存对话框位置 - 参考WebChat-main
-function saveDialogPosition() {
-  chrome.storage.sync.set({
-    dialogPosition: {
-      left: dialogPosition.left,
-      top: dialogPosition.top,
-      isCustomPosition: dialogPosition.isCustomPosition,
-    },
-  });
-}
-
-// 保存对话框尺寸 - 参考WebChat-main
-function saveDialogSize() {
-  chrome.storage.sync.set({
-    dialogSize: {
-      width: dialogSize.width,
-      height: dialogSize.height,
-    },
-  });
-}
-
-// 更新调整大小手柄位置
-function updateResizeHandlePosition() {
-  const dialogElement = document.querySelector(".custom-dialog") as HTMLElement;
-  const resizeHandle = document.querySelector(".resize-handle") as HTMLElement;
-
-  if (dialogElement && resizeHandle) {
-    // 手柄使用绝对定位，相对于对话框的右下角
-    resizeHandle.style.position = "absolute";
-    resizeHandle.style.right = "0";
-    resizeHandle.style.bottom = "0";
-    resizeHandle.style.left = "auto";
-    resizeHandle.style.top = "auto";
-  }
-}
-
-// 处理对话框鼠标按下
-function handleDialogMouseDown(e: MouseEvent) {
-  // 阻止事件冒泡到overlay
-  e.stopPropagation();
-}
-
-// 处理头部鼠标按下 - 开始拖动 - 参考WebChat-main
-function handleHeaderMouseDown(e: MouseEvent) {
-  if (e.target && (e.target as HTMLElement).closest(".dialog-controls")) return;
-
-  isDragging = true;
-  const dialogElement = document.querySelector(".custom-dialog") as HTMLElement;
-  if (dialogElement) {
-    // 禁用过渡动画，确保拖动流畅
-    dialogElement.style.transition = "none";
-    const rect = dialogElement.getBoundingClientRect();
-    dragInitialX = e.clientX - rect.left;
-    dragInitialY = e.clientY - rect.top;
-  }
-
-  document.addEventListener("mousemove", handleDrag);
-  document.addEventListener("mouseup", stopDrag);
-  e.preventDefault();
-}
-
-// 处理拖动 - 完全参考WebChat-main的实现
-function handleDrag(e: MouseEvent) {
-  if (!isDragging) return;
-
-  e.preventDefault();
-
-  // 取消之前的动画帧
-  if (dragAnimationFrame) {
-    cancelAnimationFrame(dragAnimationFrame);
-  }
-
-  // 请求新的动画帧
-  dragAnimationFrame = requestAnimationFrame(() => {
-    dragCurrentX = e.clientX - dragInitialX;
-    dragCurrentY = e.clientY - dragInitialY;
-
-    // 确保不会超出屏幕边界
-    const maxX = window.innerWidth - dialogSize.width;
-    const maxY = window.innerHeight - dialogSize.height;
-
-    dragCurrentX = Math.max(0, Math.min(dragCurrentX, maxX));
-    dragCurrentY = Math.max(0, Math.min(dragCurrentY, maxY));
-
-    // 直接操作自定义对话框的DOM元素
-    const dialogElement = document.querySelector(
-      ".custom-dialog"
-    ) as HTMLElement;
-    if (dialogElement) {
-      dialogElement.style.left = `${dragCurrentX}px`;
-      dialogElement.style.top = `${dragCurrentY}px`;
-      dialogElement.style.right = "auto";
-      dialogElement.style.bottom = "auto";
-    }
-
-    // 同时更新响应式数据
-    dialogPosition.left = `${dragCurrentX}px`;
-    dialogPosition.top = `${dragCurrentY}px`;
-    dialogPosition.isCustomPosition = true;
-
-    // 更新调整大小手柄位置
-    nextTick(() => {
-      updateResizeHandlePosition();
-    });
-  });
-}
-
-// 停止拖动 - 完全参考WebChat-main
-function stopDrag() {
-  if (isDragging) {
-    isDragging = false;
-    saveDialogPosition();
-    document.removeEventListener("mousemove", handleDrag);
-    document.removeEventListener("mouseup", stopDrag);
-
-    if (dragAnimationFrame) {
-      cancelAnimationFrame(dragAnimationFrame);
-    }
-
-    // 恢复过渡动画
-    const dialogElement = document.querySelector(
-      ".custom-dialog"
-    ) as HTMLElement;
-    if (dialogElement) {
-      dialogElement.style.transition = "";
-    }
-  }
-}
-
-// 开始调整大小 - 完全参考WebChat-main
-function handleResizeStart(e: MouseEvent) {
-  isResizing = true;
-  resizeInitialX = e.clientX;
-  resizeInitialY = e.clientY;
-
-  // 获取当前对话框的实际尺寸
-  const dialogElement = document.querySelector(".custom-dialog") as HTMLElement;
-  if (dialogElement) {
-    // 禁用过渡动画，确保调整大小流畅
-    dialogElement.style.transition = "none";
-    resizeInitialWidth = dialogElement.offsetWidth;
-    resizeInitialHeight = dialogElement.offsetHeight;
-  } else {
-    resizeInitialWidth = dialogSize.width;
-    resizeInitialHeight = dialogSize.height;
-  }
-
-  document.addEventListener("mousemove", handleResize);
-  document.addEventListener("mouseup", stopResize);
-  e.preventDefault();
-  e.stopPropagation();
-}
-
-// 处理调整大小 - 完全参考WebChat-main
-function handleResize(e: MouseEvent) {
-  if (!isResizing) return;
-
-  e.preventDefault();
-
-  // 取消之前的动画帧
-  if (resizeAnimationFrame) {
-    cancelAnimationFrame(resizeAnimationFrame);
-  }
-
-  // 请求新的动画帧
-  resizeAnimationFrame = requestAnimationFrame(() => {
-    const deltaX = e.clientX - resizeInitialX;
-    const deltaY = e.clientY - resizeInitialY;
-
-    const newWidth = Math.max(dialogSize.minWidth, resizeInitialWidth + deltaX);
-    const newHeight = Math.max(
-      dialogSize.minHeight,
-      resizeInitialHeight + deltaY
-    );
-
-    // 直接操作自定义对话框的DOM元素
-    const dialogElement = document.querySelector(
-      ".custom-dialog"
-    ) as HTMLElement;
-    if (dialogElement) {
-      const rect = dialogElement.getBoundingClientRect();
-      const maxWidth = window.innerWidth - rect.left - 20;
-      const maxHeight = window.innerHeight - rect.top - 20;
-
-      const finalWidth = Math.min(newWidth, maxWidth);
-      const finalHeight = Math.min(newHeight, maxHeight);
-
-      // 直接设置DOM样式
-      dialogElement.style.width = `${finalWidth}px`;
-      dialogElement.style.height = `${finalHeight}px`;
-
-      // 同时更新响应式数据
-      dialogSize.width = finalWidth;
-      dialogSize.height = finalHeight;
-
-      // 更新调整大小手柄位置
-      updateResizeHandlePosition();
-    }
-  });
-}
-
-// 停止调整大小 - 完全参考WebChat-main
-function stopResize() {
-  if (isResizing) {
-    isResizing = false;
-    saveDialogSize();
-    document.removeEventListener("mousemove", handleResize);
-    document.removeEventListener("mouseup", stopResize);
-
-    if (resizeAnimationFrame) {
-      cancelAnimationFrame(resizeAnimationFrame);
-    }
-
-    // 恢复过渡动画
-    const dialogElement = document.querySelector(
-      ".custom-dialog"
-    ) as HTMLElement;
-    if (dialogElement) {
-      dialogElement.style.transition = "";
-    }
-
-    // 更新调整大小手柄位置
-    updateResizeHandlePosition();
-  }
-}
-
-// 处理遮罩层点击
-function handleOverlayClick(e: MouseEvent) {
-  // 如果点击的是遮罩层本身，关闭对话框
-  if (e.target === e.currentTarget) {
-    close();
+// 保存对话框大小
+async function saveDialogSize() {
+  try {
+    await chrome.storage.local.set({ dialogSize });
+  } catch (error) {
+    console.warn("保存对话框大小失败:", error);
   }
 }
 
@@ -513,181 +182,287 @@ function close() {
   emit("update:visible", false);
 }
 
-// 最小化对话框
-function minimize() {
-  emit("minimize");
-  emit("update:visible", false);
-}
-
-// 加载历史会话
-async function loadHistory() {
-  try {
-    const response = await chrome.runtime.sendMessage({
-      action: "getChatHistory",
-    });
-
-    if (response && response.messages) {
-      messages.value = response.messages;
-    }
-
-    if (response && response.isGenerating) {
-      isGenerating.value = true;
-    }
-  } catch (error) {
-    console.error("加载历史失败:", error);
-  }
-}
-
 // 发送消息
 async function sendMessage() {
   const message = userInput.value.trim();
-  if (!message || isGenerating.value) return;
+  if (!message || appState.isProcessing.value) return;
+
+  console.log("CustomDialog开始发送消息:", message);
 
   // 清空输入框
   userInput.value = "";
-  isGenerating.value = true;
+  // 同时清空contenteditable div的内容
+  if (chatInputRef.value) {
+    chatInputRef.value.clear();
+  }
+  appActions.setGenerating(true);
 
   try {
     // 添加用户消息
-    messages.value.push({ content: message, isUser: true });
+    appActions.addMessage(message, true);
 
-    // 滚动到底部
-    nextTick(() => {
-      scrollToBottom();
-    });
+    // 获取页面内容
+    const pageContent = (window as any).parseWebContent
+      ? (window as any).parseWebContent()
+      : "";
 
-    // 发送消息到background script
+    // 发送消息到Background Script
     const response = await chrome.runtime.sendMessage({
       action: "generateAnswer",
-      question: message,
+      data: {
+        question: message,
+        pageContent: pageContent,
+        tabId: "current",
+      },
     });
 
-    if (response && response.success) {
-      console.log("消息发送成功");
-    }
+    console.log("收到Background Script响应:", response);
 
-    // 设置超时保护，防止一直显示"AI正在思考中..."
-    setTimeout(() => {
-      if (isGenerating.value && !isStreaming.value) {
-        console.warn("AI响应超时，重置状态");
-        isGenerating.value = false;
-        messages.value.push({
-          content: "抱歉，AI响应超时，请检查网络连接和API配置。",
-          isUser: false,
-        });
-      }
-    }, 30000); // 30秒超时
+    if (!response.success) {
+      throw new Error(response.error || "未知错误");
+    }
   } catch (error) {
     console.error("发送消息失败:", error);
-    isGenerating.value = false;
-
-    // 检查是否是API密钥未配置的错误
-    if (error.message && error.message.includes("API密钥未配置")) {
-      messages.value.push({
-        content:
-          "❌ **API密钥未配置**\n\n请先配置API密钥才能使用AI对话功能：\n\n1. 点击扩展图标\n2. 选择「设置」\n3. 在「API配置」标签中填入您的API密钥\n\n**推荐API服务：**\n- [DeepSeek](https://platform.deepseek.com/) - 免费额度大\n- [OpenAI](https://platform.openai.com/) - 功能强大\n- [Claude](https://console.anthropic.com/) - 安全性高",
-        isUser: false,
-      });
-    } else {
-      messages.value.push({
-        content: `发送消息失败：${error.message || "未知错误"}`,
-        isUser: false,
-      });
-    }
+    appActions.addMessage(
+      `抱歉，发送消息时出现错误：${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      false
+    );
+  } finally {
+    appActions.setGenerating(false);
   }
 }
 
 // 处理键盘事件
-function handleKeydown(e: KeyboardEvent) {
-  if (e.key === "Enter" && !e.shiftKey) {
-    e.preventDefault();
+function handleKeydown(e: Event) {
+  const keyboardEvent = e as KeyboardEvent;
+  if (keyboardEvent.key === "Enter" && !keyboardEvent.shiftKey) {
+    keyboardEvent.preventDefault();
     sendMessage();
   }
 }
 
-// 滚动到底部
-function scrollToBottom() {
-  if (messagesContainer.value) {
-    messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
-  }
-}
+// 停止生成
+async function stopGeneration() {
+  console.log("用户点击停止生成");
 
-// 处理流式数据块
-function handleStreamChunk(event: CustomEvent) {
-  console.log("收到流式数据块:", event.detail);
-  const { chunk, fullResponse } = event.detail;
-  streamingMessage.value = fullResponse;
-  isStreaming.value = true;
+  // 停止所有处理状态
+  appActions.setStreaming(false);
+  appActions.setGenerating(false);
 
-  // 更新最后一条消息或创建新消息
-  if (
-    messages.value.length > 0 &&
-    !messages.value[messages.value.length - 1].isUser
-  ) {
-    // 更新最后一条AI消息
-    messages.value[messages.value.length - 1].content = fullResponse;
-  } else {
-    // 创建新的AI消息
-    messages.value.push({ content: fullResponse, isUser: false });
+  // 清空输入框
+  userInput.value = "";
+  if (chatInputRef.value) {
+    chatInputRef.value.clear();
   }
 
-  nextTick(() => {
-    scrollToBottom();
-  });
-}
-
-// 处理流式响应完成
-function handleStreamComplete(event: CustomEvent) {
-  console.log("流式响应完成:", event.detail);
-  const { fullResponse } = event.detail;
-  streamingMessage.value = "";
-  isStreaming.value = false;
-  isGenerating.value = false;
-
-  // 确保最后一条消息是完整的
-  if (
-    messages.value.length > 0 &&
-    !messages.value[messages.value.length - 1].isUser
-  ) {
-    messages.value[messages.value.length - 1].content = fullResponse;
-  }
-
-  nextTick(() => {
-    scrollToBottom();
-  });
-}
-
-// 处理流式响应错误
-function handleStreamError(event: CustomEvent) {
-  console.log("流式响应错误:", event.detail);
-  const { error } = event.detail;
-  streamingMessage.value = "";
-  isStreaming.value = false;
-  isGenerating.value = false;
-
-  // 检查是否是API密钥未配置的错误
-  if (error && error.includes("API密钥未配置")) {
-    messages.value.push({
-      content:
-        "❌ **API密钥未配置**\n\n请先配置API密钥才能使用AI对话功能：\n\n1. 点击扩展图标\n2. 选择「设置」\n3. 在「API配置」标签中填入您的API密钥\n\n**推荐API服务：**\n- [DeepSeek](https://platform.deepseek.com/) - 免费额度大\n- [OpenAI](https://platform.openai.com/) - 功能强大\n- [Claude](https://console.anthropic.com/) - 安全性高",
-      isUser: false,
+  // 通知Background Script停止流式请求
+  try {
+    const response = await chrome.runtime.sendMessage({
+      action: "stopStreaming",
     });
-  } else {
-    // 添加错误消息
-    messages.value.push({
-      content: `抱歉，生成答案时出现错误：${error}`,
-      isUser: false,
-    });
+    console.log("Background Script停止响应:", response);
+  } catch (error) {
+    console.error("通知Background Script停止失败:", error);
   }
 
-  nextTick(() => {
-    scrollToBottom();
-  });
+  // 通知App.vue清除流式超时
+  window.dispatchEvent(new CustomEvent("stopStreaming"));
+
+  console.log("已停止生成");
 }
 
-// 渲染Markdown（使用新的markdown-it）
-function renderMarkdownContent(text: string): string {
-  return renderMarkdown(text);
+// 解析网页内容
+function parseWebContent(): string {
+  // 克隆当前文档以供解析，不影响原始页面
+  const docClone = document.cloneNode(true) as Document;
+
+  // 在克隆的文档中移除不需要的元素
+  const scripts = docClone.querySelectorAll("script");
+  const styles = docClone.querySelectorAll('style, link[rel="stylesheet"]');
+  const headers = docClone.querySelectorAll("header, nav");
+  const footers = docClone.querySelectorAll("footer");
+
+  // 从克隆的文档中移除元素
+  [...scripts, ...styles, ...headers, ...footers].forEach((element) => {
+    if (element.parentNode) {
+      element.parentNode.removeChild(element);
+    }
+  });
+
+  // 获取主要内容（从body中提取）
+  const mainContent = docClone.querySelector("body");
+
+  // 如果找到了body元素，获取其文本内容
+  const textContent = mainContent ? mainContent.innerText : "";
+
+  // 清理文本
+  return textContent
+    .replace(/\s+/g, " ") // 将多个空白字符替换为单个空格
+    .trim(); // 移除首尾空白
+}
+
+// 处理对话框鼠标按下
+function handleDialogMouseDown(event: MouseEvent) {
+  event.stopPropagation();
+}
+
+// 处理头部鼠标按下
+function handleHeaderMouseDown(event: MouseEvent) {
+  isDragging = true;
+  dragInitialX = event.clientX;
+  dragInitialY = event.clientY;
+  dragCurrentX = dialogPosition.isCustomPosition
+    ? parseInt(dialogPosition.left) || 0
+    : window.innerWidth - dialogSize.width - 20;
+  dragCurrentY = dialogPosition.isCustomPosition
+    ? parseInt(dialogPosition.top) || 0
+    : window.innerHeight - dialogSize.height - 80;
+
+  // 禁用文字选择
+  document.body.style.userSelect = "none";
+  document.body.style.webkitUserSelect = "none";
+  document.body.style.mozUserSelect = "none";
+  document.body.style.msUserSelect = "none";
+
+  document.addEventListener("mousemove", handleDrag);
+  document.addEventListener("mouseup", stopDrag);
+}
+
+// 处理拖动
+function handleDrag(event: MouseEvent) {
+  if (!isDragging) return;
+
+  const deltaX = event.clientX - dragInitialX;
+  const deltaY = event.clientY - dragInitialY;
+
+  const newX = dragCurrentX + deltaX;
+  const newY = dragCurrentY + deltaY;
+
+  // 限制在视窗内
+  const maxX = window.innerWidth - dialogSize.width;
+  const maxY = window.innerHeight - dialogSize.height;
+
+  dialogPosition.left = `${Math.max(0, Math.min(newX, maxX))}px`;
+  dialogPosition.top = `${Math.max(0, Math.min(newY, maxY))}px`;
+  dialogPosition.isCustomPosition = true;
+
+  saveDialogPosition();
+}
+
+// 停止拖动
+function stopDrag() {
+  isDragging = false;
+
+  // 恢复文字选择
+  document.body.style.userSelect = "";
+  document.body.style.webkitUserSelect = "";
+  document.body.style.mozUserSelect = "";
+  document.body.style.msUserSelect = "";
+
+  document.removeEventListener("mousemove", handleDrag);
+  document.removeEventListener("mouseup", stopDrag);
+}
+
+// 处理调整大小开始
+function handleResizeStart(direction: string, event: MouseEvent) {
+  console.log("开始调整大小，方向:", direction);
+  event.stopPropagation();
+  event.preventDefault(); // 防止默认行为
+  isResizing = true;
+  resizeDirection = direction;
+  resizeInitialX = event.clientX;
+  resizeInitialY = event.clientY;
+  resizeInitialWidth = dialogSize.width;
+  resizeInitialHeight = dialogSize.height;
+
+  // 禁用文字选择
+  document.body.style.userSelect = "none";
+  document.body.style.webkitUserSelect = "none";
+  document.body.style.mozUserSelect = "none";
+  document.body.style.msUserSelect = "none";
+
+  // 获取当前对话框位置
+  const dialog = (event.currentTarget as HTMLElement).closest(
+    ".custom-dialog"
+  ) as HTMLElement;
+  if (dialog) {
+    const rect = dialog.getBoundingClientRect();
+    resizeInitialLeft = rect.left;
+    resizeInitialTop = rect.top;
+  }
+
+  document.addEventListener("mousemove", handleResize);
+  document.addEventListener("mouseup", stopResize);
+}
+
+// 处理调整大小
+function handleResize(event: MouseEvent) {
+  if (!isResizing) return;
+
+  const deltaX = event.clientX - resizeInitialX;
+  const deltaY = event.clientY - resizeInitialY;
+
+  let newWidth = resizeInitialWidth;
+  let newHeight = resizeInitialHeight;
+  let newLeft = resizeInitialLeft;
+  let newTop = resizeInitialTop;
+
+  // 根据方向计算新的尺寸和位置
+  switch (resizeDirection) {
+    case "se": // 右下角
+      newWidth = resizeInitialWidth + deltaX;
+      newHeight = resizeInitialHeight + deltaY;
+      break;
+    case "sw": // 左下角
+      newWidth = resizeInitialWidth - deltaX;
+      newHeight = resizeInitialHeight + deltaY;
+      newLeft = resizeInitialLeft + deltaX;
+      break;
+    case "ne": // 右上角
+      newWidth = resizeInitialWidth + deltaX;
+      newHeight = resizeInitialHeight - deltaY;
+      newTop = resizeInitialTop + deltaY;
+      break;
+    case "nw": // 左上角
+      newWidth = resizeInitialWidth - deltaX;
+      newHeight = resizeInitialHeight - deltaY;
+      newLeft = resizeInitialLeft + deltaX;
+      newTop = resizeInitialTop + deltaY;
+      break;
+  }
+
+  // 应用最小尺寸限制
+  dialogSize.width = Math.max(dialogSize.minWidth, newWidth);
+  dialogSize.height = Math.max(dialogSize.minHeight, newHeight);
+
+  // 更新位置（对于左上和左下角）
+  if (resizeDirection === "nw" || resizeDirection === "sw") {
+    dialogPosition.left = `${Math.max(0, newLeft)}px`;
+    dialogPosition.isCustomPosition = true;
+  }
+  if (resizeDirection === "nw" || resizeDirection === "ne") {
+    dialogPosition.top = `${Math.max(0, newTop)}px`;
+    dialogPosition.isCustomPosition = true;
+  }
+
+  saveDialogSize();
+  saveDialogPosition();
+}
+
+// 停止调整大小
+function stopResize() {
+  isResizing = false;
+
+  // 恢复文字选择
+  document.body.style.userSelect = "";
+  document.body.style.webkitUserSelect = "";
+  document.body.style.mozUserSelect = "";
+  document.body.style.msUserSelect = "";
+
+  document.removeEventListener("mousemove", handleResize);
+  document.removeEventListener("mouseup", stopResize);
 }
 
 // 清理事件监听器
@@ -696,264 +471,326 @@ onUnmounted(() => {
   document.removeEventListener("mouseup", stopDrag);
   document.removeEventListener("mousemove", handleResize);
   document.removeEventListener("mouseup", stopResize);
-
-  // 清理流式响应事件监听器
-  window.removeEventListener("streamChunk", handleStreamChunk);
-  window.removeEventListener("streamComplete", handleStreamComplete);
-  window.removeEventListener("streamError", handleStreamError);
 });
 </script>
 
 <style scoped>
-/* 自定义对话框遮罩层 */
-.custom-dialog-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: transparent;
-  z-index: 2147483645;
-  pointer-events: auto;
-}
-
-/* 自定义对话框 - 参考WebChat-main */
+/* 对话框主体 */
 .custom-dialog {
-  position: fixed;
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
-  z-index: 2147483646;
-  display: flex;
-  flex-direction: column;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  max-height: 80vh;
-  max-width: 90vw;
-  overflow: hidden;
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  min-width: 300px;
-  min-height: 400px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+  border-radius: 20px !important;
+  box-shadow: 0 8px 32px rgba(102, 126, 234, 0.3),
+    0 0 0 1px rgba(255, 255, 255, 0.2) !important;
+  border: 1px solid rgba(255, 255, 255, 0.3) !important;
+  min-width: 320px !important;
+  min-height: 400px !important;
+  max-width: 90vw !important;
+  max-height: 80vh !important;
+  position: fixed !important;
+  z-index: 10001 !important;
+  overflow: hidden !important;
+  animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  opacity: 1 !important;
+  visibility: visible !important;
 }
 
-/* 对话框头部 */
-.dialog-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  border-bottom: 1px solid #eee;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  cursor: move;
-  user-select: none;
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
-.dialog-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  font-size: 16px;
-}
-
-.dialog-controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.tokens-counter {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  opacity: 0.8;
-}
-
-.control-btn {
-  color: white !important;
-  border: none !important;
-  background: transparent !important;
-}
-
-.control-btn:hover {
-  background: rgba(255, 255, 255, 0.2) !important;
-}
-
-/* 对话框内容 */
+/* 对话框内容区域 */
 .dialog-content {
   flex: 1;
   display: flex;
   flex-direction: column;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.95) 0%,
+    rgba(255, 255, 255, 0.9) 100%
+  );
   overflow: hidden;
-}
-
-.chat-container {
-  flex: 1;
-  padding: 20px;
-  overflow-y: auto;
-  background: #f8f9fa;
-  max-height: calc(100vh - 200px);
+  position: relative;
   min-height: 200px;
-}
-
-.messages {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.message {
-  padding: 12px 16px;
-  border-radius: 8px;
-  max-width: 80%;
-  word-wrap: break-word;
-  line-height: 1.5;
-  overflow-wrap: break-word;
-  word-break: break-word;
-}
-
-.user-message {
-  background: #409eff;
-  color: white;
-  margin-left: auto;
-  border-radius: 12px 12px 2px 12px;
-}
-
-.assistant-message {
-  background: #f0f0f0;
-  color: #000;
-  border-radius: 12px 12px 12px 2px;
-  font-size: 14px;
-}
-
-.loading-message {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  text-align: center;
-  color: #909399;
-  padding: 20px;
+  max-height: calc(100% - 120px);
+  backdrop-filter: blur(20px);
 }
 
 /* 对话框底部 */
 .dialog-footer {
-  padding: 12px 16px;
-  border-top: 1px solid #eee;
-  background: white;
-}
-
-.input-container {
-  display: flex;
-  gap: 8px;
-  align-items: flex-end;
-}
-
-.message-input {
-  flex: 1;
-}
-
-.send-button {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.8) 0%,
+    rgba(240, 248, 255, 0.9) 100%
+  );
+  border-top: 1px solid rgba(255, 255, 255, 0.3);
+  padding: 20px;
+  position: relative;
+  overflow: hidden;
   flex-shrink: 0;
+  min-height: 80px;
+  backdrop-filter: blur(20px);
 }
 
-/* 调整大小手柄样式 - 完全参考WebChat-main */
+.dialog-footer::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(102, 126, 234, 0.6) 25%,
+    rgba(118, 75, 162, 0.8) 50%,
+    rgba(102, 126, 234, 0.6) 75%,
+    transparent 100%
+  );
+  pointer-events: none;
+}
+
+/* 调整大小手柄基础样式 */
 .resize-handle {
-  position: absolute !important;
-  width: 20px !important;
-  height: 20px !important;
-  right: 0 !important;
-  bottom: 0 !important;
-  cursor: se-resize !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  z-index: 2147483647 !important;
-  background: transparent !important;
-  pointer-events: auto !important;
-  user-select: none !important;
+  position: absolute;
+  width: 32px;
+  height: 32px;
+  transition: all 0.3s ease;
+  z-index: 10;
+  opacity: 0.7;
 }
 
-/* 调整手柄的图标 - 参考WebChat-main */
-.resize-handle::before {
-  content: "" !important;
-  width: 8px !important;
-  height: 8px !important;
-  border-right: 2px solid #999 !important;
-  border-bottom: 2px solid #999 !important;
-  position: absolute !important;
-  right: 4px !important;
-  bottom: 4px !important;
-}
-
-/* 调整手柄悬停效果 */
 .resize-handle:hover {
-  background: rgba(0, 0, 0, 0.05) !important;
+  opacity: 1;
+  transform: scale(1.15);
 }
 
-.resize-handle:hover::before {
-  border-right: 2px solid #666 !important;
-  border-bottom: 2px solid #666 !important;
+/* 右下角 - 同心圆弧样式 */
+.resize-handle-se {
+  bottom: -4px;
+  right: -4px;
+  cursor: nw-resize;
 }
 
-/* 自定义滚动条样式 */
-.chat-container::-webkit-scrollbar {
-  width: 8px;
+.resize-handle-se::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: conic-gradient(
+    from 0deg at 100% 100%,
+    transparent 0deg,
+    rgba(99, 102, 241, 0.8) 30deg,
+    rgba(168, 85, 247, 0.9) 60deg,
+    rgba(99, 102, 241, 0.8) 90deg,
+    transparent 120deg
+  );
+  border-radius: 50% 0 50% 0;
+  clip-path: polygon(100% 0%, 100% 100%, 0% 100%);
 }
 
-.chat-container::-webkit-scrollbar-track {
-  background: #f1f1f1;
+.resize-handle-se::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 24px;
+  height: 24px;
+  background: conic-gradient(
+    from 0deg at 100% 100%,
+    transparent 0deg,
+    rgba(99, 102, 241, 0.4) 30deg,
+    rgba(168, 85, 247, 0.5) 60deg,
+    rgba(99, 102, 241, 0.4) 90deg,
+    transparent 120deg
+  );
+  border-radius: 50% 0 50% 0;
+  clip-path: polygon(100% 0%, 100% 100%, 0% 100%);
 }
 
-.chat-container::-webkit-scrollbar-thumb {
-  background: #888;
-  border-radius: 4px;
+/* 左下角 - 同心圆弧样式 */
+.resize-handle-sw {
+  bottom: -4px;
+  left: -4px;
+  cursor: ne-resize;
 }
 
-.chat-container::-webkit-scrollbar-thumb:hover {
-  background: #555;
+.resize-handle-sw::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: conic-gradient(
+    from 90deg at 0% 100%,
+    transparent 0deg,
+    rgba(99, 102, 241, 0.8) 30deg,
+    rgba(168, 85, 247, 0.9) 60deg,
+    rgba(99, 102, 241, 0.8) 90deg,
+    transparent 120deg
+  );
+  border-radius: 0 50% 0 50%;
+  clip-path: polygon(0% 0%, 100% 100%, 0% 100%);
 }
 
-/* 代码高亮样式 */
-.assistant-message .hljs {
-  background: #f6f8fa;
-  border: 1px solid #e1e4e8;
-  border-radius: 6px;
-  padding: 16px;
-  overflow-x: auto;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-  font-size: 13px;
-  line-height: 1.45;
+.resize-handle-sw::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 24px;
+  height: 24px;
+  background: conic-gradient(
+    from 90deg at 0% 100%,
+    transparent 0deg,
+    rgba(99, 102, 241, 0.4) 30deg,
+    rgba(168, 85, 247, 0.5) 60deg,
+    rgba(99, 102, 241, 0.4) 90deg,
+    transparent 120deg
+  );
+  border-radius: 0 50% 0 50%;
+  clip-path: polygon(0% 0%, 100% 100%, 0% 100%);
 }
 
-.assistant-message .hljs code {
-  background: transparent;
-  padding: 0;
-  border: none;
-  font-size: inherit;
+/* 右上角 - 同心圆弧样式 */
+.resize-handle-ne {
+  top: -4px;
+  right: -4px;
+  cursor: sw-resize;
 }
 
-.assistant-message pre {
-  background: #f6f8fa;
-  border: 1px solid #e1e4e8;
-  border-radius: 6px;
-  padding: 16px;
-  overflow-x: auto;
-  margin: 0.5em 0;
+.resize-handle-ne::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: conic-gradient(
+    from 270deg at 100% 0%,
+    transparent 0deg,
+    rgba(99, 102, 241, 0.8) 30deg,
+    rgba(168, 85, 247, 0.9) 60deg,
+    rgba(99, 102, 241, 0.8) 90deg,
+    transparent 120deg
+  );
+  border-radius: 0 50% 0 50%;
+  clip-path: polygon(100% 0%, 100% 100%, 0% 0%);
 }
 
-.assistant-message pre code {
-  background: transparent;
-  padding: 0;
-  border: none;
-  font-size: inherit;
+.resize-handle-ne::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 24px;
+  height: 24px;
+  background: conic-gradient(
+    from 270deg at 100% 0%,
+    transparent 0deg,
+    rgba(99, 102, 241, 0.4) 30deg,
+    rgba(168, 85, 247, 0.5) 60deg,
+    rgba(99, 102, 241, 0.4) 90deg,
+    transparent 120deg
+  );
+  border-radius: 0 50% 0 50%;
+  clip-path: polygon(100% 0%, 100% 100%, 0% 0%);
 }
 
-.assistant-message code {
-  background-color: #f3f4f6;
-  padding: 2px 4px;
-  border-radius: 3px;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-  font-size: 0.9em;
+/* 左上角 - 同心圆弧样式 */
+.resize-handle-nw {
+  top: -4px;
+  left: -4px;
+  cursor: se-resize;
+}
+
+.resize-handle-nw::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: conic-gradient(
+    from 180deg at 0% 0%,
+    transparent 0deg,
+    rgba(99, 102, 241, 0.8) 30deg,
+    rgba(168, 85, 247, 0.9) 60deg,
+    rgba(99, 102, 241, 0.8) 90deg,
+    transparent 120deg
+  );
+  border-radius: 50% 0 50% 0;
+  clip-path: polygon(0% 0%, 100% 0%, 0% 100%);
+}
+
+.resize-handle-nw::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 24px;
+  height: 24px;
+  background: conic-gradient(
+    from 180deg at 0% 0%,
+    transparent 0deg,
+    rgba(99, 102, 241, 0.4) 30deg,
+    rgba(168, 85, 247, 0.5) 60deg,
+    rgba(99, 102, 241, 0.4) 90deg,
+    transparent 120deg
+  );
+  border-radius: 50% 0 50% 0;
+  clip-path: polygon(0% 0%, 100% 0%, 0% 100%);
+}
+
+/* 响应式设计优化 */
+@media (max-width: 768px) {
+  .custom-dialog {
+    min-width: 300px;
+    margin: 16px;
+    border-radius: 20px;
+    min-height: 350px;
+    max-height: 85vh;
+  }
+
+  .dialog-content {
+    min-height: 150px;
+    max-height: calc(100% - 100px);
+  }
+
+  .dialog-footer {
+    padding: 16px;
+    flex-shrink: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .custom-dialog {
+    min-width: 280px;
+    margin: 12px;
+    border-radius: 16px;
+    min-height: 300px;
+    max-height: 90vh;
+  }
+
+  .dialog-content {
+    min-height: 120px;
+    max-height: calc(100% - 80px);
+  }
+
+  .dialog-footer {
+    padding: 12px;
+    flex-shrink: 0;
+  }
 }
 </style>
