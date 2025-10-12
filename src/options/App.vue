@@ -2,10 +2,24 @@
   <div class="container">
     <!-- 固定的Tab切换栏 -->
     <div class="tab-header">
-      <el-tabs v-model="activeTab" class="settings-tabs">
-        <el-tab-pane label="API 配置" name="api"></el-tab-pane>
-        <el-tab-pane label="常规设置" name="general"></el-tab-pane>
-      </el-tabs>
+      <div class="header-content">
+        <div class="title-section">
+          <img src="/icons/icon32.png" alt="Smart Web Notes" class="app-logo" />
+          <h3 class="title">Smart Web Notes 设置</h3>
+        </div>
+        <div class="status-indicator">
+          <el-icon class="status-icon">
+            <Setting />
+          </el-icon>
+          <span class="status-text">配置中心</span>
+        </div>
+      </div>
+      <div class="tabs-container">
+        <el-tabs v-model="activeTab" class="settings-tabs">
+          <el-tab-pane label="API 配置" name="api"></el-tab-pane>
+          <el-tab-pane label="常规设置" name="general"></el-tab-pane>
+        </el-tabs>
+      </div>
     </div>
 
     <!-- 可滚动的内容区域 -->
@@ -88,15 +102,6 @@
               </el-form-item>
             </el-form>
           </el-card>
-
-          <el-alert
-            v-if="statusMessage"
-            :title="statusMessage"
-            :type="statusType"
-            :closable="false"
-            show-icon
-            class="status-alert"
-          />
         </div>
 
         <!-- 常规设置内容 -->
@@ -162,18 +167,60 @@
     </el-scrollbar>
 
     <div class="action-bar">
+      <!-- 悬浮状态提示 -->
+      <div v-if="statusMessage" class="status-floating">
+        <el-alert
+          :title="statusMessage"
+          :type="statusType as any"
+          :closable="true"
+          show-icon
+          @close="closeStatus"
+          class="status-alert"
+        />
+      </div>
+
       <div class="action-inner">
-        <el-button @click="resetSettings" type="default" :icon="Refresh">
-          还原默认设置
-        </el-button>
         <el-button
-          @click="saveAndTest"
-          type="primary"
-          :loading="isLoading"
-          :icon="Check"
+          @click="resetSettings"
+          type="default"
+          :icon="Refresh"
+          class="action-button secondary-button"
         >
-          {{ isLoading ? "测试中..." : "保存并测试" }}
+          还原
         </el-button>
+        <div class="button-group">
+          <el-button
+            @click="saveSettings"
+            type="primary"
+            :icon="Check"
+            class="action-button primary-button"
+          >
+            保存
+          </el-button>
+          <el-button
+            @click="testConnection"
+            :type="
+              testStatus === 'success'
+                ? 'success'
+                : testStatus === 'error'
+                ? 'danger'
+                : 'success'
+            "
+            :loading="isLoading"
+            :icon="Connection"
+            :class="[
+              'action-button',
+              'test-button',
+              testStatus === 'success'
+                ? 'test-success'
+                : testStatus === 'error'
+                ? 'test-error'
+                : '',
+            ]"
+          >
+            {{ isLoading ? "测试中..." : "测试连接" }}
+          </el-button>
+        </div>
       </div>
     </div>
   </div>
@@ -217,6 +264,40 @@ const isLoading = ref(false);
 const statusMessage = ref("");
 const statusType = ref("");
 const scrollbarRef = ref();
+
+// 测试状态：'none' | 'success' | 'error'
+const testStatus = ref("none");
+let statusTimer: NodeJS.Timeout | null = null;
+
+// 显示状态提示并自动消失
+function showStatus(message: string, type: string, duration = 3000) {
+  // 清除之前的定时器
+  if (statusTimer) {
+    clearTimeout(statusTimer);
+  }
+
+  statusMessage.value = message;
+  statusType.value = type;
+
+  // 设置自动消失
+  statusTimer = setTimeout(() => {
+    statusMessage.value = "";
+    statusType.value = "";
+  }, duration);
+}
+
+// 手动关闭状态提示
+function closeStatus() {
+  // 清除定时器
+  if (statusTimer) {
+    clearTimeout(statusTimer);
+    statusTimer = null;
+  }
+
+  // 清除状态
+  statusMessage.value = "";
+  statusType.value = "";
+}
 
 // 初始化
 onMounted(async () => {
@@ -280,8 +361,9 @@ async function testApiConfig() {
       messages: [
         {
           role: "user",
-          content: "Hello, please respond with 'API test successful' to confirm the connection is working."
-        }
+          content:
+            "Hello, please respond with 'API test successful' to confirm the connection is working.",
+        },
       ],
       max_tokens: 50,
       temperature: 0.1,
@@ -307,34 +389,49 @@ async function testApiConfig() {
     }
 
     const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || data.message?.content || "API响应格式异常";
-    
+    const content =
+      data.choices?.[0]?.message?.content ||
+      data.message?.content ||
+      "API响应格式异常";
+
     return content;
   } catch (error) {
     throw new Error(error instanceof Error ? error.message : "API测试失败");
   }
 }
 
-// 保存并测试
-async function saveAndTest() {
+// 保存设置
+async function saveSettings() {
+  try {
+    await chrome.storage.sync.set(settings);
+    showStatus("设置保存成功！", "success");
+  } catch (error) {
+    showStatus(
+      `保存失败：${error instanceof Error ? error.message : "未知错误"}`,
+      "error"
+    );
+  }
+}
+
+// 测试连接
+async function testConnection() {
   isLoading.value = true;
   statusMessage.value = "";
   statusType.value = "";
+  testStatus.value = "none";
 
   try {
-    // 保存设置
-    await chrome.storage.sync.set(settings);
-
     // 测试API配置
     const result = await testApiConfig();
 
-    statusMessage.value = `测试成功！AI回复：${result}`;
-    statusType.value = "success";
+    testStatus.value = "success";
+    showStatus("API连接测试成功！", "success");
   } catch (error) {
-    statusMessage.value = `测试失败：${
-      error instanceof Error ? error.message : "未知错误"
-    }`;
-    statusType.value = "error";
+    testStatus.value = "error";
+    showStatus(
+      `测试失败：${error instanceof Error ? error.message : "未知错误"}`,
+      "error"
+    );
   } finally {
     isLoading.value = false;
   }
@@ -344,11 +441,21 @@ async function saveAndTest() {
 function resetSettings() {
   Object.assign(settings, DEFAULT_SETTINGS);
   statusMessage.value = "";
+  statusType.value = "";
+  testStatus.value = "none";
+
+  // 清除定时器
+  if (statusTimer) {
+    clearTimeout(statusTimer);
+    statusTimer = null;
+  }
 }
 </script>
 
 <style scoped>
 .container {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
   display: flex;
   overflow: hidden;
   flex-direction: column;
@@ -356,18 +463,86 @@ function resetSettings() {
   box-sizing: border-box;
   height: 500px;
 
-  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  box-shadow: 0 12px 40px rgba(15, 52, 96, 0.4);
 }
 
-/* 固定的Tab切换栏样式 - 类似之前的title栏 */
+/* 固定的Tab切换栏样式 */
 .tab-header {
-  margin-bottom: 16px;
   padding: 16px 20px;
 
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.15);
 
+  backdrop-filter: blur(20px);
+}
+
+.header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.title-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.app-logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(15, 52, 96, 0.3);
+  transition: transform 0.3s ease;
+}
+
+.app-logo:hover {
+  transform: scale(1.05);
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0;
+
+  color: white;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  font-size: 12px;
+  font-weight: 500;
+
+  padding: 4px 8px;
+  border-radius: 12px;
+
+  color: rgba(212, 175, 55, 0.9);
+  background: rgba(212, 175, 55, 0.15);
+  border: 1px solid rgba(212, 175, 55, 0.3);
+
+  transition: all 0.3s ease;
+}
+
+.status-icon {
+  font-size: 14px;
+}
+
+.status-text {
+  font-size: 11px;
+}
+
+.tabs-container {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
   backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  overflow: hidden;
 }
 
 .settings-tabs {
@@ -376,50 +551,78 @@ function resetSettings() {
 
 .settings-tabs :deep(.el-tabs__header) {
   margin: 0;
-
   border-bottom: none;
+  background: transparent;
 }
 
 .settings-tabs :deep(.el-tabs__nav-wrap) {
   padding: 0;
+  background: transparent;
+}
+
+.settings-tabs :deep(.el-tabs__nav) {
+  border: none;
+  display: flex;
+  width: 100%;
 }
 
 .settings-tabs :deep(.el-tabs__item) {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
-  line-height: 40px;
+  line-height: 44px;
 
-  height: 40px;
-  padding: 0 20px;
+  height: 44px;
+  padding: 0 24px !important;
+  margin: 0;
+  flex: 1;
 
-  color: #2c3e50;
+  color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+  border: none;
+  border-radius: 0;
+
+  transition: all 0.3s ease;
+  position: relative;
+  text-align: center;
+}
+
+.settings-tabs :deep(.el-tabs__item:hover) {
+  color: white;
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .settings-tabs :deep(.el-tabs__item.is-active) {
-  color: #409eff;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
+  color: white;
+  background: rgba(255, 255, 255, 0.2);
+  font-weight: 700;
+}
 
-  -webkit-text-fill-color: transparent;
+.settings-tabs :deep(.el-tabs__item.is-active::after) {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  background: linear-gradient(135deg, #d4af37 0%, #ffc107 100%);
+  border-radius: 2px;
+  box-shadow: 0 0 8px rgba(212, 175, 55, 0.4);
 }
 
 .settings-tabs :deep(.el-tabs__active-bar) {
-  height: 3px;
-
-  border-radius: 2px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: none;
 }
 
 /* 可滚动的内容区域 */
 .content-scroll {
   flex: 1;
-
-  height: calc(100% - 120px);
+  height: calc(100% - 140px);
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px);
 }
 
 .tab-content {
-  padding: 0 10px;
+  padding: 16px;
 }
 
 .tab-pane-content {
@@ -438,23 +641,28 @@ function resetSettings() {
 }
 
 .settings-card {
-  border: none;
-  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
   background: rgba(255, 255, 255, 0.95);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
 
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(20px);
 }
 
 .settings-card :deep(.el-card__header) {
   padding: 16px 20px;
-
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   color: white;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  border-radius: 16px 16px 0 0;
 }
 
 .settings-card :deep(.el-card__header .card-header) {
   color: white;
+}
+
+.settings-card :deep(.el-card__body) {
+  padding: 20px;
 }
 
 .settings-form {
@@ -495,24 +703,174 @@ function resetSettings() {
 
 .status-alert {
   margin-top: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(10px);
+}
+
+.status-alert :deep(.el-alert__closebtn) {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 16px;
+  font-weight: bold;
+  transition: color 0.2s ease;
+}
+
+.status-alert :deep(.el-alert__closebtn:hover) {
+  color: rgba(255, 255, 255, 1);
 }
 
 .action-bar {
   position: sticky;
   bottom: 0;
-
   flex: 0 0 auto;
-
-  background: rgba(255, 255, 255, 0.9);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.1);
   box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
+  backdrop-filter: blur(20px);
+}
+
+.status-floating {
+  position: absolute;
+  top: -60px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  width: calc(100% - 32px);
+  max-width: 400px;
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
 }
 
 .action-inner {
   display: flex;
 
-  padding: 12px 16px;
+  padding: 16px;
 
   gap: 12px;
   justify-content: center;
+  align-items: center;
+}
+
+.button-group {
+  display: flex;
+  gap: 8px;
+}
+
+.action-button {
+  font-size: 13px;
+  font-weight: 600;
+
+  height: 36px;
+  padding: 0 20px;
+
+  transition: all 0.2s ease;
+
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+
+  backdrop-filter: blur(10px);
+}
+
+.action-button:hover {
+  transform: translateY(-1px);
+
+  border-color: rgba(255, 255, 255, 0.3);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+}
+
+.primary-button {
+  color: white;
+  border-color: rgba(255, 255, 255, 0.3);
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.2) 0%,
+    rgba(255, 255, 255, 0.1) 100%
+  );
+}
+
+.primary-button:hover {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.3) 0%,
+    rgba(255, 255, 255, 0.2) 100%
+  );
+}
+
+.secondary-button {
+  color: white;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.secondary-button:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.test-button {
+  color: white;
+  border-color: rgba(76, 175, 80, 0.6);
+  background: linear-gradient(
+    135deg,
+    rgba(76, 175, 80, 0.3) 0%,
+    rgba(76, 175, 80, 0.2) 100%
+  );
+}
+
+.test-button:hover {
+  background: linear-gradient(
+    135deg,
+    rgba(76, 175, 80, 0.4) 0%,
+    rgba(76, 175, 80, 0.3) 100%
+  );
+  border-color: rgba(76, 175, 80, 0.8);
+}
+
+/* 测试成功状态 */
+.test-success {
+  background: linear-gradient(
+    135deg,
+    rgba(76, 175, 80, 0.4) 0%,
+    rgba(76, 175, 80, 0.3) 100%
+  ) !important;
+  border-color: rgba(76, 175, 80, 0.8) !important;
+  box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.3) !important;
+}
+
+.test-success:hover {
+  background: linear-gradient(
+    135deg,
+    rgba(76, 175, 80, 0.5) 0%,
+    rgba(76, 175, 80, 0.4) 100%
+  ) !important;
+  border-color: rgba(76, 175, 80, 1) !important;
+}
+
+/* 测试失败状态 */
+.test-error {
+  background: linear-gradient(
+    135deg,
+    rgba(244, 67, 54, 0.4) 0%,
+    rgba(244, 67, 54, 0.3) 100%
+  ) !important;
+  border-color: rgba(244, 67, 54, 0.8) !important;
+  box-shadow: 0 0 0 2px rgba(244, 67, 54, 0.3) !important;
+}
+
+.test-error:hover {
+  background: linear-gradient(
+    135deg,
+    rgba(244, 67, 54, 0.5) 0%,
+    rgba(244, 67, 54, 0.4) 100%
+  ) !important;
+  border-color: rgba(244, 67, 54, 1) !important;
 }
 </style>

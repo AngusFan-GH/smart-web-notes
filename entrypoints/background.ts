@@ -1,5 +1,4 @@
 import { DEFAULT_SETTINGS } from "../src/shared/constants/defaults";
-import { apiService } from "../src/shared/services/apiService";
 import type {
   ChromeMessage,
   ChromeResponse,
@@ -11,6 +10,7 @@ export default defineBackground(() => {
 
   // 存储当前流式请求的AbortController
   let currentStreamController: AbortController | null = null;
+  let isStreaming = false; // 跟踪流式状态
 
   // 监听来自Content Script的消息
   chrome.runtime.onMessage.addListener(
@@ -63,6 +63,8 @@ export default defineBackground(() => {
   ) {
     try {
       const settings = await chrome.storage.sync.get(DEFAULT_SETTINGS);
+      // 动态加载apiService
+      const { apiService } = await import("../src/shared/services/apiService");
       apiService.setSettings(settings);
       sendResponse({
         success: true,
@@ -83,6 +85,8 @@ export default defineBackground(() => {
   ) {
     try {
       await chrome.storage.sync.set(data);
+      // 动态加载apiService
+      const { apiService } = await import("../src/shared/services/apiService");
       apiService.setSettings(data);
       sendResponse({
         success: true,
@@ -102,7 +106,7 @@ export default defineBackground(() => {
     sendResponse: (response: ChromeResponse) => void
   ) {
     try {
-      const { question, pageContent } = data;
+      const { question, pageContent, conversationHistory } = data;
 
       if (!question) {
         sendResponse({
@@ -131,12 +135,26 @@ export default defineBackground(() => {
         }
       }
 
+      // 检查是否已有流式请求在进行
+      if (isStreaming) {
+        sendResponse({
+          success: false,
+          error: "已有流式请求在进行中",
+        });
+        return;
+      }
+
       // 创建AbortController用于控制流式请求
       currentStreamController = new AbortController();
+      isStreaming = true;
 
       // 生成答案
       let fullResponse = "";
       try {
+        // 动态加载apiService
+        const { apiService } = await import(
+          "../src/shared/services/apiService"
+        );
         await apiService.generateAnswer(
           question,
           pageContent || "",
@@ -159,6 +177,9 @@ export default defineBackground(() => {
           (fullResponse: string) => {
             // 发送完成信号到Content Script
             console.log("Background Script: 流式响应完成，发送done消息");
+            isStreaming = false;
+            currentStreamController = null;
+
             chrome.tabs
               .sendMessage(tabId, {
                 action: "streamChunk",
@@ -176,6 +197,9 @@ export default defineBackground(() => {
           },
           (error: string) => {
             // 发送错误信号到Content Script
+            isStreaming = false;
+            currentStreamController = null;
+
             chrome.tabs
               .sendMessage(tabId, {
                 action: "streamError",
@@ -185,9 +209,14 @@ export default defineBackground(() => {
                 // 忽略发送失败的错误
               });
           },
-          currentStreamController
+          currentStreamController,
+          conversationHistory
         );
       } catch (error) {
+        // 重置流式状态
+        isStreaming = false;
+        currentStreamController = null;
+
         // 检查是否是AbortError（用户主动停止）
         if (error instanceof Error && error.name === "AbortError") {
           console.log("Background Script: 流式请求被用户停止");
@@ -242,6 +271,7 @@ export default defineBackground(() => {
     if (currentStreamController) {
       currentStreamController.abort();
       currentStreamController = null;
+      isStreaming = false;
       console.log("Background Script: 已停止流式请求");
     }
 

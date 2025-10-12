@@ -1,7 +1,11 @@
 <template>
   <div class="dialog-header" @mousedown="handleHeaderMouseDown">
     <div class="dialog-title">
-      <el-icon><ChatDotRound /></el-icon>
+      <img
+        src="../icons/icon16.png"
+        alt="Smart Web Notes"
+        class="dialog-icon"
+      />
       <span>{{ title }}</span>
     </div>
     <div class="dialog-controls">
@@ -18,8 +22,8 @@
 </template>
 
 <script setup lang="ts">
-import { ElIcon, ElButton } from "element-plus";
-import { ChatDotRound, Close } from "@element-plus/icons-vue";
+import { ElButton } from "element-plus";
+import { Close } from "@element-plus/icons-vue";
 
 interface Props {
   title?: string;
@@ -47,8 +51,9 @@ const handleHeaderMouseDown = (event: MouseEvent) => {
 .dialog-header {
   background: linear-gradient(
     135deg,
-    rgba(102, 126, 234, 0.2) 0%,
-    rgba(118, 75, 162, 0.2) 100%
+    rgba(26, 26, 46, 0.9) 0%,
+    rgba(22, 33, 62, 0.9) 50%,
+    rgba(15, 52, 96, 0.9) 100%
   );
   border-radius: 20px 20px 0 0;
   padding: 16px 20px;
@@ -56,7 +61,7 @@ const handleHeaderMouseDown = (event: MouseEvent) => {
   align-items: center;
   justify-content: space-between;
   backdrop-filter: blur(20px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+  border-bottom: 1px solid rgba(212, 175, 55, 0.3);
   position: relative;
   overflow: hidden;
   cursor: move;
@@ -72,8 +77,8 @@ const handleHeaderMouseDown = (event: MouseEvent) => {
   bottom: 0;
   background: linear-gradient(
     135deg,
-    rgba(255, 255, 255, 0.9) 0%,
-    rgba(240, 248, 255, 0.6) 100%
+    rgba(212, 175, 55, 0.1) 0%,
+    rgba(255, 193, 7, 0.1) 100%
   );
   pointer-events: none;
 }
@@ -88,7 +93,7 @@ const handleHeaderMouseDown = (event: MouseEvent) => {
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(99, 102, 241, 0.3) 50%,
+    rgba(212, 175, 55, 0.3) 50%,
     transparent 100%
   );
   pointer-events: none;
@@ -100,17 +105,23 @@ const handleHeaderMouseDown = (event: MouseEvent) => {
   gap: 8px;
   font-size: 18px;
   font-weight: 600;
-  color: #2d3748;
-  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.8);
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
   letter-spacing: -0.025em;
   position: relative;
   z-index: 1;
 }
 
-.dialog-title .el-icon {
-  font-size: 20px;
-  color: rgba(102, 126, 234, 0.9);
-  filter: drop-shadow(0 1px 2px rgba(255, 255, 255, 0.5));
+.dialog-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+  transition: transform 0.3s ease;
+}
+
+.dialog-icon:hover {
+  transform: scale(1.1);
 }
 
 .dialog-controls {
@@ -126,34 +137,34 @@ const handleHeaderMouseDown = (event: MouseEvent) => {
   border-radius: 10px;
   background: linear-gradient(
     135deg,
-    rgba(255, 255, 255, 0.8) 0%,
-    rgba(240, 248, 255, 0.9) 100%
+    rgba(26, 26, 46, 0.8) 0%,
+    rgba(22, 33, 62, 0.9) 50%,
+    rgba(15, 52, 96, 0.9) 100%
   );
-  box-shadow: 0 4px 8px rgba(102, 126, 234, 0.2),
-    0 0 0 1px rgba(102, 126, 234, 0.3);
+  box-shadow: 0 4px 8px rgba(15, 52, 96, 0.3), 0 0 0 1px rgba(212, 175, 55, 0.3);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   backdrop-filter: blur(20px);
-  border: 1px solid rgba(102, 126, 234, 0.3);
+  border: 1px solid rgba(212, 175, 55, 0.3);
   min-width: 36px;
   min-height: 36px;
-  color: #4a5568;
+  color: rgba(255, 255, 255, 0.8);
 }
 
 .control-btn:hover {
   background: linear-gradient(
     135deg,
-    rgba(255, 255, 255, 0.95) 0%,
-    rgba(240, 248, 255, 1) 100%
+    rgba(15, 52, 96, 0.9) 0%,
+    rgba(22, 33, 62, 0.95) 50%,
+    rgba(26, 26, 46, 1) 100%
   );
-  box-shadow: 0 6px 12px rgba(102, 126, 234, 0.3),
-    0 0 0 1px rgba(102, 126, 234, 0.4);
+  box-shadow: 0 6px 12px rgba(15, 52, 96, 0.4), 0 0 0 1px rgba(255, 193, 7, 0.4);
   transform: translateY(-1px);
-  color: #2d3748;
+  color: rgba(255, 255, 255, 0.95);
 }
 
 .control-btn:active {
   transform: translateY(0);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(212, 175, 55, 0.5);
 }
 
 /* 响应式设计 */
@@ -167,8 +178,9 @@ const handleHeaderMouseDown = (event: MouseEvent) => {
     font-size: 16px;
   }
 
-  .dialog-title .el-icon {
-    font-size: 18px;
+  .dialog-icon {
+    width: 18px;
+    height: 18px;
   }
 
   .control-btn {
@@ -189,8 +201,9 @@ const handleHeaderMouseDown = (event: MouseEvent) => {
     font-size: 15px;
   }
 
-  .dialog-title .el-icon {
-    font-size: 16px;
+  .dialog-icon {
+    width: 16px;
+    height: 16px;
   }
 
   .control-btn {

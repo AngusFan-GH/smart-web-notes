@@ -34,10 +34,31 @@ export default defineConfig({
     description: "AI-powered web content analysis",
     version: "1.0",
     permissions: ["activeTab", "scripting", "storage"],
+    icons: {
+      16: "/icons/icon16.png",
+      32: "/icons/icon32.png",
+      48: "/icons/icon48.png",
+      128: "/icons/icon128.png",
+    },
+    action: {
+      default_popup: "popup.html",
+      default_title: "Smart Web Notes",
+    },
     content_scripts: [
       {
         matches: ["<all_urls>"],
         js: ["content-scripts/content.js"],
+      },
+    ],
+    web_accessible_resources: [
+      {
+        resources: [
+          "lib/*.js",
+          "assets/*",
+          "workers/*.js",
+          "icons/*.png",
+        ],
+        matches: ["<all_urls>"],
       },
     ],
   },

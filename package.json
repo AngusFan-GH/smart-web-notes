@@ -17,16 +17,15 @@
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",
     "@types/markdown-it": "^14.1.2",
-    "@vscode/markdown-it-katex": "^1.1.2",
     "element-plus": "^2.8.3",
     "highlight.js": "^11.9.0",
-    "katex": "^0.16.23",
     "markdown-it": "^14.1.0",
     "vue": "^3.5.21"
   },
   "devDependencies": {
     "@wxt-dev/module-vue": "^1.0.2",
     "sass": "^1.80.3",
+    "terser": "^5.44.0",
     "typescript": "^5.9.2",
     "vue-tsc": "^3.0.6",
     "wxt": "^0.20.6"

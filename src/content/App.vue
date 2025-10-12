@@ -21,6 +21,8 @@ import type { ChromeMessage, ChromeResponse } from "../shared/types";
 // 声明chrome类型
 declare const chrome: any;
 
+// 数学渲染器已集成，无需声明KaTeX类型
+
 // 加载悬浮球状态
 async function loadFloatingBallState() {
   try {
@@ -52,25 +54,22 @@ onMounted(async () => {
   // 设置消息监听
   setupMessageListener();
 
-  // 加载 KaTeX CSS
-  loadKaTeXCSS();
+  // 数学渲染器已集成
+  console.log("数学渲染器已集成");
 
   // 监听停止流式事件
   window.addEventListener("stopStreaming", handleStopStreaming);
 
   console.log("App.vue 初始化完成");
-});
 
-// 加载 KaTeX CSS
-function loadKaTeXCSS() {
-  if (!document.querySelector('link[href*="katex"]')) {
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href = "https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css";
-    link.crossOrigin = "anonymous";
-    document.head.appendChild(link);
-  }
-}
+  // 调试：检查数学公式渲染状态
+  setTimeout(() => {
+    console.log("数学公式渲染状态检查:", {
+      windowExists: typeof window !== "undefined",
+      markdownItKatex: "已启用",
+    });
+  }, 1000);
+});
 
 // 清理
 onUnmounted(() => {
@@ -168,22 +167,36 @@ function handleMessage(
 
 // 流式超时处理
 let streamTimeout: NodeJS.Timeout | null = null;
+let isStreamCompleted = false; // 防止流式完成后继续处理chunk
+
+// 重置流式状态
+function resetStreamState() {
+  console.log("重置流式状态 - 之前状态:", {
+    isStreamCompleted,
+    isStreaming: appState.isStreaming.value,
+    isGenerating: appState.isGenerating.value,
+  });
+  isStreamCompleted = false;
+  if (streamTimeout) {
+    clearTimeout(streamTimeout);
+    streamTimeout = null;
+  }
+  appActions.setStreaming(false);
+  appActions.setGenerating(false);
+  console.log("重置流式状态 - 之后状态:", {
+    isStreamCompleted,
+    isStreaming: appState.isStreaming.value,
+    isGenerating: appState.isGenerating.value,
+  });
+}
+
+// 暴露重置函数到全局，供其他组件调用
+(window as any).resetStreamState = resetStreamState;
 
 // 处理停止流式事件
 function handleStopStreaming() {
   console.log("App.vue: 收到停止流式事件");
-
-  // 清除流式超时
-  if (streamTimeout) {
-    clearTimeout(streamTimeout);
-    streamTimeout = null;
-    console.log("App.vue: 已清除流式超时");
-  }
-
-  // 确保停止所有状态
-  appActions.setStreaming(false);
-  appActions.setGenerating(false);
-
+  resetStreamState();
   console.log("App.vue: 流式处理已停止");
 }
 
@@ -192,10 +205,27 @@ function handleStreamChunk(data: any) {
   console.log("收到流式数据块:", data);
   console.log("数据类型:", data.type);
   console.log("是否有fullResponse:", !!data.fullResponse);
+  console.log("流式是否已完成:", isStreamCompleted);
 
   if (data.type === "chunk" && data.fullResponse) {
+    // 如果流式已经完成，忽略后续的chunk
+    if (isStreamCompleted) {
+      console.log("流式已完成，忽略后续chunk");
+      return;
+    }
+
     console.log("开始处理流式数据块");
-    appActions.setStreaming(true);
+    console.log("当前状态:", {
+      isStreamCompleted,
+      isStreaming: appState.isStreaming.value,
+      isGenerating: appState.isGenerating.value,
+    });
+
+    // 只在第一次收到流式数据时设置状态
+    if (!appState.isStreaming.value) {
+      appActions.setStreaming(true);
+      console.log("设置流式状态为true");
+    }
 
     // 清除之前的超时
     if (streamTimeout) {
@@ -231,24 +261,24 @@ function handleStreamChunk(data: any) {
 
 // 处理流式完成
 function handleStreamComplete(data: any) {
-  console.log("Content Script: 收到流式响应完成信号:", data);
+  console.log("Content Script: 收到流式响应完成信号");
+
+  // 标记流式已完成，防止后续chunk被处理
+  isStreamCompleted = true;
 
   // 清除超时
   if (streamTimeout) {
     clearTimeout(streamTimeout);
     streamTimeout = null;
-    console.log("Content Script: 已清除流式超时");
   }
 
   // 确保停止所有状态
   appActions.setStreaming(false);
   appActions.setGenerating(false);
-  console.log("Content Script: 已设置流式状态为false");
 
   // 如果提供了完整响应，确保最后一条消息是最新的
   if (data.fullResponse) {
     appActions.updateLastMessage(data.fullResponse);
-    console.log("Content Script: 已更新最后一条消息");
   }
 
   console.log("Content Script: 流式响应处理完成");
@@ -257,9 +287,7 @@ function handleStreamComplete(data: any) {
 // 处理流式错误
 function handleStreamError(data: any) {
   console.error("流式响应错误:", data);
-
-  appActions.setGenerating(false);
-  appActions.setStreaming(false);
+  resetStreamState();
 
   if (data.error) {
     appActions.addMessage(`错误: ${data.error}`, false);

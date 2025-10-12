@@ -7,6 +7,8 @@ export const DEFAULT_SETTINGS: Settings = {
   custom_model: "deepseek-chat",
   systemPrompt: "你是一个帮助理解网页内容的AI助手。请使用Markdown格式回复。",
   enableContext: true,
+  maxContextRounds: 5,
+  autoHideDialog: true,
   maxTokens: 2048,
   temperature: 0.7,
 } as const;

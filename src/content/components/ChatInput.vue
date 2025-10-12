@@ -4,9 +4,8 @@
       <div
         ref="inputRef"
         class="input-editor"
-        contenteditable="true"
-        :placeholder="placeholder"
         :contenteditable="!disabled"
+        :placeholder="placeholder"
         @input="handleInput"
         @keydown="handleKeydown"
         @paste="handlePaste"
@@ -171,9 +170,9 @@ onMounted(() => {
   );
   border-radius: 20px;
   padding: 6px;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15),
-    0 0 0 1px rgba(102, 126, 234, 0.2);
-  border: 1px solid rgba(102, 126, 234, 0.3);
+  box-shadow: 0 4px 12px rgba(15, 52, 96, 0.15),
+    0 0 0 1px rgba(212, 175, 55, 0.2);
+  border: 1px solid rgba(212, 175, 55, 0.3);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   overflow: hidden;
@@ -193,8 +192,8 @@ onMounted(() => {
   bottom: 0;
   background: linear-gradient(
     135deg,
-    rgba(102, 126, 234, 0.2) 0%,
-    rgba(118, 75, 162, 0.2) 50%,
+    rgba(212, 175, 55, 0.2) 0%,
+    rgba(255, 193, 7, 0.2) 50%,
     transparent 100%
   );
   opacity: 0;
@@ -203,9 +202,9 @@ onMounted(() => {
 }
 
 .chat-input-container:focus-within {
-  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4),
-    0 0 0 2px rgba(102, 126, 234, 0.3);
-  border-color: #667eea;
+  box-shadow: 0 6px 20px rgba(15, 52, 96, 0.4),
+    0 0 0 2px rgba(212, 175, 55, 0.3);
+  border-color: #d4af37;
   transform: translateY(-1px);
 }
 
@@ -266,14 +265,14 @@ onMounted(() => {
 }
 
 .submit-btn {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
   border: none;
   border-radius: 20px;
   padding: 0;
   min-width: 44px;
   height: 44px;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4),
-    0 2px 4px rgba(118, 75, 162, 0.3);
+  box-shadow: 0 4px 12px rgba(15, 52, 96, 0.4),
+    0 2px 4px rgba(212, 175, 55, 0.3);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   overflow: hidden;
@@ -305,9 +304,9 @@ onMounted(() => {
 
 .submit-btn:hover:not(:disabled) {
   transform: scale(1.05);
-  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5),
-    0 4px 8px rgba(118, 75, 162, 0.4);
-  background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%);
+  box-shadow: 0 6px 20px rgba(15, 52, 96, 0.5),
+    0 4px 8px rgba(212, 175, 55, 0.4);
+  background: linear-gradient(135deg, #0f1419 0%, #1a1a2e 50%, #16213e 100%);
 }
 
 .submit-btn:hover:not(:disabled)::before {

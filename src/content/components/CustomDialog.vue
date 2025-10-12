@@ -97,19 +97,77 @@ const dialogSize = reactive({
 });
 
 // 计算样式
-const dialogStyle = computed(() => ({
-  position: "fixed" as const,
-  right: dialogPosition.isCustomPosition ? "auto" : "20px",
-  bottom: dialogPosition.isCustomPosition ? "auto" : "80px",
-  left: dialogPosition.isCustomPosition ? dialogPosition.left : "auto",
-  top: dialogPosition.isCustomPosition ? dialogPosition.top : "auto",
-  width: `${dialogSize.width}px`,
-  height: `${dialogSize.height}px`,
-  minWidth: `${dialogSize.minWidth}px`,
-  minHeight: `${dialogSize.minHeight}px`,
-  maxWidth: "90vw",
-  maxHeight: "80vh",
-}));
+const dialogStyle = computed(() => {
+  const area = calculateAvailableArea();
+  const isMobile = window.innerWidth <= 768;
+
+  // 如果对话框位置是自定义的，需要检查是否超出屏幕范围
+  if (dialogPosition.isCustomPosition) {
+    const left = parseInt(dialogPosition.left) || 0;
+    const top = parseInt(dialogPosition.top) || 0;
+    const width = dialogSize.width;
+    const height = dialogSize.height;
+
+    // 检查是否超出屏幕边界
+    const rightOverflow = left + width > area.availableWidth;
+    const bottomOverflow = top + height > area.availableHeight;
+    const leftOverflow = left < area.leftMargin;
+    const topOverflow = top < area.topMargin;
+
+    // 如果超出范围，调整位置
+    let adjustedLeft = left;
+    let adjustedTop = top;
+
+    if (rightOverflow) {
+      adjustedLeft = Math.max(area.leftMargin, area.availableWidth - width);
+    }
+    if (bottomOverflow) {
+      adjustedTop = Math.max(area.topMargin, area.availableHeight - height);
+    }
+    if (leftOverflow) {
+      adjustedLeft = area.leftMargin;
+    }
+    if (topOverflow) {
+      adjustedTop = area.topMargin;
+    }
+
+    // 如果位置有调整，更新存储的位置
+    if (adjustedLeft !== left || adjustedTop !== top) {
+      dialogPosition.left = `${adjustedLeft}px`;
+      dialogPosition.top = `${adjustedTop}px`;
+      saveDialogPosition();
+    }
+
+    return {
+      position: "fixed" as const,
+      left: dialogPosition.left,
+      top: dialogPosition.top,
+      right: "auto",
+      bottom: "auto",
+      width: `${Math.min(dialogSize.width, area.availableWidth)}px`,
+      height: `${Math.min(dialogSize.height, area.availableHeight)}px`,
+      minWidth: `${dialogSize.minWidth}px`,
+      minHeight: `${dialogSize.minHeight}px`,
+      maxWidth: `${area.availableWidth}px`,
+      maxHeight: `${area.availableHeight}px`,
+    };
+  }
+
+  // 默认位置（非自定义）
+  return {
+    position: "fixed" as const,
+    right: `${area.rightMargin}px`,
+    bottom: `${area.bottomMargin}px`,
+    left: "auto",
+    top: "auto",
+    width: `${Math.min(dialogSize.width, area.availableWidth)}px`,
+    height: `${Math.min(dialogSize.height, area.availableHeight)}px`,
+    minWidth: `${dialogSize.minWidth}px`,
+    minHeight: `${dialogSize.minHeight}px`,
+    maxWidth: `${area.availableWidth}px`,
+    maxHeight: `${area.availableHeight}px`,
+  };
+});
 
 // 拖动相关
 let isDragging = false;
@@ -128,11 +186,144 @@ let resizeInitialHeight = 0;
 let resizeInitialLeft = 0;
 let resizeInitialTop = 0;
 
+// 防抖定时器
+let resizeTimeout: NodeJS.Timeout | null = null;
+
+// 统一的边距配置
+const MARGIN_CONFIG = {
+  // 基础边距（上下左右统一使用）
+  base: 20,
+  // 滚动条额外边距（仅用于右侧和底部）
+  scrollbar: 16,
+  // 移动端边距调整
+  mobile: {
+    base: 10,
+    scrollbar: 3,
+  },
+};
+
+// 获取滚动条宽度
+function getScrollbarWidth() {
+  // 创建临时元素来测量滚动条宽度
+  const outer = document.createElement("div");
+  outer.style.visibility = "hidden";
+  outer.style.overflow = "scroll";
+  (outer.style as any).msOverflowStyle = "scrollbar";
+  document.body.appendChild(outer);
+
+  const inner = document.createElement("div");
+  outer.appendChild(inner);
+
+  const scrollbarWidth = outer.offsetWidth - inner.offsetWidth;
+  outer.parentNode?.removeChild(outer);
+
+  return scrollbarWidth;
+}
+
+// 计算可用区域尺寸
+function calculateAvailableArea() {
+  const isMobile = window.innerWidth <= 768;
+  const scrollbarWidth = getScrollbarWidth();
+  const config = isMobile ? MARGIN_CONFIG.mobile : MARGIN_CONFIG;
+
+  return {
+    // 左侧和顶部边距（不考虑滚动条）
+    leftMargin: config.base,
+    topMargin: config.base,
+    // 右侧边距（考虑滚动条）
+    rightMargin: config.base + scrollbarWidth + config.scrollbar,
+    // 底部边距（考虑滚动条，如果有水平滚动条的话）
+    bottomMargin: config.base + config.scrollbar,
+    // 计算可用区域
+    availableWidth:
+      window.innerWidth - config.base - scrollbarWidth - config.scrollbar,
+    availableHeight: window.innerHeight - config.base - config.scrollbar,
+    // 原始窗口尺寸
+    windowWidth: window.innerWidth,
+    windowHeight: window.innerHeight,
+  };
+}
+
 // 初始化
 onMounted(async () => {
   await loadDialogPosition();
   await loadDialogSize();
+
+  // 监听窗口大小变化（使用防抖）
+  window.addEventListener("resize", handleWindowResizeDebounced);
+
+  // 添加背景点击监听（用于自动隐藏对话框）
+  document.addEventListener("mousedown", handleBackgroundClick);
 });
+
+// 防抖处理窗口大小变化
+function handleWindowResizeDebounced() {
+  if (resizeTimeout) {
+    clearTimeout(resizeTimeout);
+  }
+  resizeTimeout = setTimeout(() => {
+    handleWindowResize();
+  }, 100); // 100ms防抖
+}
+
+// 处理窗口大小变化
+function handleWindowResize() {
+  const area = calculateAvailableArea();
+
+  // 如果对话框是自定义位置，检查是否需要调整
+  if (dialogPosition.isCustomPosition) {
+    const left = parseInt(dialogPosition.left) || 0;
+    const top = parseInt(dialogPosition.top) || 0;
+    const width = dialogSize.width;
+    const height = dialogSize.height;
+
+    let needsAdjustment = false;
+    let newLeft = left;
+    let newTop = top;
+
+    // 检查右边界（考虑滚动条）
+    if (left + width > area.availableWidth) {
+      newLeft = Math.max(area.leftMargin, area.availableWidth - width);
+      needsAdjustment = true;
+    }
+
+    // 检查下边界
+    if (top + height > area.availableHeight) {
+      newTop = Math.max(area.topMargin, area.availableHeight - height);
+      needsAdjustment = true;
+    }
+
+    // 检查左边界
+    if (newLeft < area.leftMargin) {
+      newLeft = area.leftMargin;
+      needsAdjustment = true;
+    }
+
+    // 检查上边界
+    if (newTop < area.topMargin) {
+      newTop = area.topMargin;
+      needsAdjustment = true;
+    }
+
+    // 如果需要调整，更新位置
+    if (needsAdjustment) {
+      dialogPosition.left = `${newLeft}px`;
+      dialogPosition.top = `${newTop}px`;
+      saveDialogPosition();
+    }
+  }
+
+  // 如果对话框尺寸超出屏幕，调整尺寸（考虑滚动条）
+  if (dialogSize.width > area.availableWidth) {
+    dialogSize.width = Math.max(dialogSize.minWidth, area.availableWidth);
+    saveDialogSize();
+  }
+
+  if (dialogSize.height > area.availableHeight) {
+    dialogSize.height = Math.max(dialogSize.minHeight, area.availableHeight);
+    saveDialogSize();
+  }
+}
 
 // 加载对话框位置
 async function loadDialogPosition() {
@@ -195,7 +386,14 @@ async function sendMessage() {
   if (chatInputRef.value) {
     chatInputRef.value.clear();
   }
+  // 重置流式完成标志
+  if ((window as any).resetStreamState) {
+    (window as any).resetStreamState();
+  }
+
+  // 设置新的生成状态
   appActions.setGenerating(true);
+  // 注意：不在这里设置 isStreaming，等待第一个流式数据块到达时设置
 
   try {
     // 添加用户消息
@@ -206,6 +404,14 @@ async function sendMessage() {
       ? (window as any).parseWebContent()
       : "";
 
+    // 构建对话历史
+    const conversationHistory = appState.messages.value
+      .filter((msg) => msg.isUser || !msg.isUser) // 包含所有消息
+      .map((msg) => ({
+        role: msg.isUser ? ("user" as const) : ("assistant" as const),
+        content: msg.content,
+      }));
+
     // 发送消息到Background Script
     const response = await chrome.runtime.sendMessage({
       action: "generateAnswer",
@@ -213,6 +419,7 @@ async function sendMessage() {
         question: message,
         pageContent: pageContent,
         tabId: "current",
+        conversationHistory: conversationHistory,
       },
     });
 
@@ -231,6 +438,7 @@ async function sendMessage() {
     );
   } finally {
     appActions.setGenerating(false);
+    appActions.setStreaming(false);
   }
 }
 
@@ -308,6 +516,18 @@ function handleDialogMouseDown(event: MouseEvent) {
   event.stopPropagation();
 }
 
+// 处理背景点击（自动隐藏对话框）
+function handleBackgroundClick(event: MouseEvent) {
+  // 检查是否启用了自动隐藏功能
+  if (appState.settings.value?.autoHideDialog) {
+    // 检查点击的是否是对话框外部
+    const dialog = document.querySelector(".custom-dialog");
+    if (dialog && !dialog.contains(event.target as Node)) {
+      close();
+    }
+  }
+}
+
 // 处理头部鼠标按下
 function handleHeaderMouseDown(event: MouseEvent) {
   isDragging = true;
@@ -323,8 +543,8 @@ function handleHeaderMouseDown(event: MouseEvent) {
   // 禁用文字选择
   document.body.style.userSelect = "none";
   document.body.style.webkitUserSelect = "none";
-  document.body.style.mozUserSelect = "none";
-  document.body.style.msUserSelect = "none";
+  (document.body.style as any).mozUserSelect = "none";
+  (document.body.style as any).msUserSelect = "none";
 
   document.addEventListener("mousemove", handleDrag);
   document.addEventListener("mouseup", stopDrag);
@@ -357,9 +577,9 @@ function stopDrag() {
 
   // 恢复文字选择
   document.body.style.userSelect = "";
-  document.body.style.webkitUserSelect = "";
-  document.body.style.mozUserSelect = "";
-  document.body.style.msUserSelect = "";
+  (document.body.style as any).webkitUserSelect = "";
+  (document.body.style as any).mozUserSelect = "";
+  (document.body.style as any).msUserSelect = "";
 
   document.removeEventListener("mousemove", handleDrag);
   document.removeEventListener("mouseup", stopDrag);
@@ -380,8 +600,8 @@ function handleResizeStart(direction: string, event: MouseEvent) {
   // 禁用文字选择
   document.body.style.userSelect = "none";
   document.body.style.webkitUserSelect = "none";
-  document.body.style.mozUserSelect = "none";
-  document.body.style.msUserSelect = "none";
+  (document.body.style as any).mozUserSelect = "none";
+  (document.body.style as any).msUserSelect = "none";
 
   // 获取当前对话框位置
   const dialog = (event.currentTarget as HTMLElement).closest(
@@ -457,9 +677,9 @@ function stopResize() {
 
   // 恢复文字选择
   document.body.style.userSelect = "";
-  document.body.style.webkitUserSelect = "";
-  document.body.style.mozUserSelect = "";
-  document.body.style.msUserSelect = "";
+  (document.body.style as any).webkitUserSelect = "";
+  (document.body.style as any).mozUserSelect = "";
+  (document.body.style as any).msUserSelect = "";
 
   document.removeEventListener("mousemove", handleResize);
   document.removeEventListener("mouseup", stopResize);
@@ -471,17 +691,29 @@ onUnmounted(() => {
   document.removeEventListener("mouseup", stopDrag);
   document.removeEventListener("mousemove", handleResize);
   document.removeEventListener("mouseup", stopResize);
+  window.removeEventListener("resize", handleWindowResizeDebounced);
+  document.removeEventListener("mousedown", handleBackgroundClick);
+
+  // 清理防抖定时器
+  if (resizeTimeout) {
+    clearTimeout(resizeTimeout);
+  }
 });
 </script>
 
 <style scoped>
 /* 对话框主体 */
 .custom-dialog {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+  background: linear-gradient(
+    135deg,
+    #1a1a2e 0%,
+    #16213e 50%,
+    #0f3460 100%
+  ) !important;
   border-radius: 20px !important;
-  box-shadow: 0 8px 32px rgba(102, 126, 234, 0.3),
-    0 0 0 1px rgba(255, 255, 255, 0.2) !important;
-  border: 1px solid rgba(255, 255, 255, 0.3) !important;
+  box-shadow: 0 8px 32px rgba(15, 52, 96, 0.4),
+    0 0 0 1px rgba(212, 175, 55, 0.3) !important;
+  border: 1px solid rgba(212, 175, 55, 0.4) !important;
   min-width: 320px !important;
   min-height: 400px !important;
   max-width: 90vw !important;
@@ -514,8 +746,9 @@ onUnmounted(() => {
   flex-direction: column;
   background: linear-gradient(
     135deg,
-    rgba(255, 255, 255, 0.95) 0%,
-    rgba(255, 255, 255, 0.9) 100%
+    rgba(26, 26, 46, 0.95) 0%,
+    rgba(22, 33, 62, 0.9) 50%,
+    rgba(15, 52, 96, 0.9) 100%
   );
   overflow: hidden;
   position: relative;
@@ -528,10 +761,11 @@ onUnmounted(() => {
 .dialog-footer {
   background: linear-gradient(
     135deg,
-    rgba(255, 255, 255, 0.8) 0%,
-    rgba(240, 248, 255, 0.9) 100%
+    rgba(26, 26, 46, 0.8) 0%,
+    rgba(22, 33, 62, 0.9) 50%,
+    rgba(15, 52, 96, 0.9) 100%
   );
-  border-top: 1px solid rgba(255, 255, 255, 0.3);
+  border-top: 1px solid rgba(212, 175, 55, 0.3);
   padding: 20px;
   position: relative;
   overflow: hidden;
@@ -550,9 +784,9 @@ onUnmounted(() => {
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(102, 126, 234, 0.6) 25%,
-    rgba(118, 75, 162, 0.8) 50%,
-    rgba(102, 126, 234, 0.6) 75%,
+    rgba(212, 175, 55, 0.6) 25%,
+    rgba(255, 193, 7, 0.8) 50%,
+    rgba(212, 175, 55, 0.6) 75%,
     transparent 100%
   );
   pointer-events: none;
@@ -590,9 +824,9 @@ onUnmounted(() => {
   background: conic-gradient(
     from 0deg at 100% 100%,
     transparent 0deg,
-    rgba(99, 102, 241, 0.8) 30deg,
-    rgba(168, 85, 247, 0.9) 60deg,
-    rgba(99, 102, 241, 0.8) 90deg,
+    rgba(212, 175, 55, 0.8) 30deg,
+    rgba(255, 193, 7, 0.9) 60deg,
+    rgba(212, 175, 55, 0.8) 90deg,
     transparent 120deg
   );
   border-radius: 50% 0 50% 0;
@@ -609,9 +843,9 @@ onUnmounted(() => {
   background: conic-gradient(
     from 0deg at 100% 100%,
     transparent 0deg,
-    rgba(99, 102, 241, 0.4) 30deg,
-    rgba(168, 85, 247, 0.5) 60deg,
-    rgba(99, 102, 241, 0.4) 90deg,
+    rgba(212, 175, 55, 0.4) 30deg,
+    rgba(255, 193, 7, 0.5) 60deg,
+    rgba(212, 175, 55, 0.4) 90deg,
     transparent 120deg
   );
   border-radius: 50% 0 50% 0;
@@ -635,9 +869,9 @@ onUnmounted(() => {
   background: conic-gradient(
     from 90deg at 0% 100%,
     transparent 0deg,
-    rgba(99, 102, 241, 0.8) 30deg,
-    rgba(168, 85, 247, 0.9) 60deg,
-    rgba(99, 102, 241, 0.8) 90deg,
+    rgba(212, 175, 55, 0.8) 30deg,
+    rgba(255, 193, 7, 0.9) 60deg,
+    rgba(212, 175, 55, 0.8) 90deg,
     transparent 120deg
   );
   border-radius: 0 50% 0 50%;
@@ -654,9 +888,9 @@ onUnmounted(() => {
   background: conic-gradient(
     from 90deg at 0% 100%,
     transparent 0deg,
-    rgba(99, 102, 241, 0.4) 30deg,
-    rgba(168, 85, 247, 0.5) 60deg,
-    rgba(99, 102, 241, 0.4) 90deg,
+    rgba(212, 175, 55, 0.4) 30deg,
+    rgba(255, 193, 7, 0.5) 60deg,
+    rgba(212, 175, 55, 0.4) 90deg,
     transparent 120deg
   );
   border-radius: 0 50% 0 50%;
@@ -680,9 +914,9 @@ onUnmounted(() => {
   background: conic-gradient(
     from 270deg at 100% 0%,
     transparent 0deg,
-    rgba(99, 102, 241, 0.8) 30deg,
-    rgba(168, 85, 247, 0.9) 60deg,
-    rgba(99, 102, 241, 0.8) 90deg,
+    rgba(212, 175, 55, 0.8) 30deg,
+    rgba(255, 193, 7, 0.9) 60deg,
+    rgba(212, 175, 55, 0.8) 90deg,
     transparent 120deg
   );
   border-radius: 0 50% 0 50%;
@@ -699,9 +933,9 @@ onUnmounted(() => {
   background: conic-gradient(
     from 270deg at 100% 0%,
     transparent 0deg,
-    rgba(99, 102, 241, 0.4) 30deg,
-    rgba(168, 85, 247, 0.5) 60deg,
-    rgba(99, 102, 241, 0.4) 90deg,
+    rgba(212, 175, 55, 0.4) 30deg,
+    rgba(255, 193, 7, 0.5) 60deg,
+    rgba(212, 175, 55, 0.4) 90deg,
     transparent 120deg
   );
   border-radius: 0 50% 0 50%;
@@ -725,9 +959,9 @@ onUnmounted(() => {
   background: conic-gradient(
     from 180deg at 0% 0%,
     transparent 0deg,
-    rgba(99, 102, 241, 0.8) 30deg,
-    rgba(168, 85, 247, 0.9) 60deg,
-    rgba(99, 102, 241, 0.8) 90deg,
+    rgba(212, 175, 55, 0.8) 30deg,
+    rgba(255, 193, 7, 0.9) 60deg,
+    rgba(212, 175, 55, 0.8) 90deg,
     transparent 120deg
   );
   border-radius: 50% 0 50% 0;
@@ -744,53 +978,14 @@ onUnmounted(() => {
   background: conic-gradient(
     from 180deg at 0% 0%,
     transparent 0deg,
-    rgba(99, 102, 241, 0.4) 30deg,
-    rgba(168, 85, 247, 0.5) 60deg,
-    rgba(99, 102, 241, 0.4) 90deg,
+    rgba(212, 175, 55, 0.4) 30deg,
+    rgba(255, 193, 7, 0.5) 60deg,
+    rgba(212, 175, 55, 0.4) 90deg,
     transparent 120deg
   );
   border-radius: 50% 0 50% 0;
   clip-path: polygon(0% 0%, 100% 0%, 0% 100%);
 }
 
-/* 响应式设计优化 */
-@media (max-width: 768px) {
-  .custom-dialog {
-    min-width: 300px;
-    margin: 16px;
-    border-radius: 20px;
-    min-height: 350px;
-    max-height: 85vh;
-  }
-
-  .dialog-content {
-    min-height: 150px;
-    max-height: calc(100% - 100px);
-  }
-
-  .dialog-footer {
-    padding: 16px;
-    flex-shrink: 0;
-  }
-}
-
-@media (max-width: 480px) {
-  .custom-dialog {
-    min-width: 280px;
-    margin: 12px;
-    border-radius: 16px;
-    min-height: 300px;
-    max-height: 90vh;
-  }
-
-  .dialog-content {
-    min-height: 120px;
-    max-height: calc(100% - 80px);
-  }
-
-  .dialog-footer {
-    padding: 12px;
-    flex-shrink: 0;
-  }
-}
+/* 响应式设计已通过JavaScript边距配置系统处理，无需额外CSS */
 </style>

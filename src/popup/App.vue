@@ -1,7 +1,10 @@
 <template>
   <div class="container">
     <div class="header">
-      <h3 class="title">Smart Web Notes</h3>
+      <div class="title-section">
+        <img src="/icons/icon32.png" alt="Smart Web Notes" class="app-logo" />
+        <h3 class="title">Smart Web Notes</h3>
+      </div>
       <div class="status-indicator" :class="statusClass">
         <el-icon class="status-icon">
           <component :is="statusIcon" />
@@ -289,8 +292,8 @@ function openSettings() {
 
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 16px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  box-shadow: 0 12px 40px rgba(102, 126, 234, 0.3);
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  box-shadow: 0 12px 40px rgba(15, 52, 96, 0.4);
 }
 
 .header {
@@ -304,11 +307,33 @@ function openSettings() {
   backdrop-filter: blur(20px);
 }
 
+.title-section {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 4px;
+  margin-bottom: 6px;
+}
+
+.app-logo {
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(15, 52, 96, 0.3);
+  transition: transform 0.3s ease;
+  display: flex;
+  align-items: center;
+}
+
+.app-logo:hover {
+  transform: scale(1.05);
+}
+
 .title {
   font-size: 18px;
   font-weight: 700;
 
-  margin: 0 0 8px 0;
+  margin: 0;
 
   color: white;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
@@ -330,27 +355,27 @@ function openSettings() {
 }
 
 .status-indicator.ready {
-  color: rgba(76, 175, 80, 0.9);
-  background: rgba(76, 175, 80, 0.1);
-  border: 1px solid rgba(76, 175, 80, 0.2);
+  color: rgba(212, 175, 55, 0.9);
+  background: rgba(212, 175, 55, 0.15);
+  border: 1px solid rgba(212, 175, 55, 0.3);
 }
 
 .status-indicator.active {
-  color: rgba(33, 150, 243, 0.9);
-  background: rgba(33, 150, 243, 0.1);
-  border: 1px solid rgba(33, 150, 243, 0.2);
+  color: rgba(255, 193, 7, 0.9);
+  background: rgba(255, 193, 7, 0.15);
+  border: 1px solid rgba(255, 193, 7, 0.3);
 }
 
 .status-indicator.hidden {
   color: rgba(255, 152, 0, 0.9);
-  background: rgba(255, 152, 0, 0.1);
-  border: 1px solid rgba(255, 152, 0, 0.2);
+  background: rgba(255, 152, 0, 0.15);
+  border: 1px solid rgba(255, 152, 0, 0.3);
 }
 
 .status-indicator.loading {
-  color: rgba(156, 39, 176, 0.9);
-  background: rgba(156, 39, 176, 0.1);
-  border: 1px solid rgba(156, 39, 176, 0.2);
+  color: rgba(255, 193, 7, 0.9);
+  background: rgba(255, 193, 7, 0.15);
+  border: 1px solid rgba(255, 193, 7, 0.3);
 }
 
 .status-icon {

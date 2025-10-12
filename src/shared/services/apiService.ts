@@ -47,7 +47,8 @@ export class ApiService {
     onChunk: (chunk: StreamChunk) => void,
     onComplete: (fullResponse: string) => void,
     onError: (error: string) => void,
-    abortController?: AbortController
+    abortController?: AbortController,
+    conversationHistory?: Array<{ role: "user" | "assistant"; content: string }>
   ): Promise<void> {
     try {
       // 验证配置
@@ -57,7 +58,11 @@ export class ApiService {
       }
 
       // 构建消息
-      const messages = this.buildMessages(question, pageContent);
+      const messages = this.buildMessages(
+        question,
+        pageContent,
+        conversationHistory
+      );
 
       // 获取API配置
       const { custom_apiBase, custom_apiKey, custom_model } = this.settings!;
@@ -88,7 +93,8 @@ export class ApiService {
 
   private buildMessages(
     question: string,
-    pageContent: string
+    pageContent: string,
+    conversationHistory?: Array<{ role: "user" | "assistant"; content: string }>
   ): Array<{ role: "system" | "user" | "assistant"; content: string }> {
     const messages: Array<{
       role: "system" | "user" | "assistant";
@@ -103,7 +109,26 @@ export class ApiService {
       });
     }
 
-    // 网页内容
+    // 添加对话历史（如果启用上下文聊天）
+    if (
+      this.settings?.enableContext &&
+      conversationHistory &&
+      conversationHistory.length > 0
+    ) {
+      // 限制对话轮数
+      const maxRounds = this.settings.maxContextRounds || 5;
+      const limitedHistory = conversationHistory.slice(-maxRounds * 2); // 每轮包含一问一答
+
+      // 添加历史对话
+      limitedHistory.forEach((msg) => {
+        messages.push({
+          role: msg.role,
+          content: msg.content,
+        });
+      });
+    }
+
+    // 当前问题
     if (pageContent && this.settings?.enableContext) {
       messages.push({
         role: "user",
@@ -138,6 +163,7 @@ export class ApiService {
 
     const decoder = new TextDecoder();
     let fullResponse = "";
+    let isCompleted = false; // 防止重复调用onComplete
 
     try {
       const fetchOptions: RequestInit = {
@@ -178,7 +204,10 @@ export class ApiService {
             const data = line.slice(6).trim();
 
             if (data === "[DONE]") {
-              onComplete(fullResponse);
+              if (!isCompleted) {
+                isCompleted = true;
+                onComplete(fullResponse);
+              }
               return;
             }
 
@@ -203,13 +232,17 @@ export class ApiService {
       }
 
       // 如果没有收到[DONE]信号，手动完成
-      onComplete(fullResponse);
+      if (!isCompleted) {
+        isCompleted = true;
+        onComplete(fullResponse);
+      }
     } catch (error) {
       // 检查是否是AbortError（用户主动停止）
       if (error instanceof Error && error.name === "AbortError") {
         console.log("流式请求被用户停止，完成已接收的内容");
         // 如果有已接收的内容，完成它
-        if (fullResponse) {
+        if (fullResponse && !isCompleted) {
+          isCompleted = true;
           onComplete(fullResponse);
         }
         return; // 不调用onError

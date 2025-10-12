@@ -1,14 +1,10 @@
 <template>
   <div v-if="visible" class="floating-ball" @click="handleClick">
-    <el-icon class="ball-icon">
-      <MagicStick />
-    </el-icon>
+    <img src="../icons/icon16.png" alt="Smart Web Notes" class="ball-icon" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { MagicStick } from "@element-plus/icons-vue";
-
 interface Props {
   visible?: boolean;
 }
@@ -34,15 +30,15 @@ function handleClick() {
   bottom: 20px;
   width: 48px;
   height: 48px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
   border-radius: 50%;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 8px 32px rgba(102, 126, 234, 0.3),
-    0 0 0 1px rgba(255, 255, 255, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 8px 32px rgba(15, 52, 96, 0.4),
+    0 0 0 1px rgba(212, 175, 55, 0.3);
+  border: 1px solid rgba(212, 175, 55, 0.4);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 10000;
   user-select: none;
@@ -51,9 +47,9 @@ function handleClick() {
 
 .floating-ball:hover {
   transform: scale(1.05);
-  box-shadow: 0 12px 40px rgba(102, 126, 234, 0.4),
-    0 0 0 1px rgba(255, 255, 255, 0.3);
-  background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%);
+  box-shadow: 0 12px 40px rgba(15, 52, 96, 0.5),
+    0 0 0 1px rgba(212, 175, 55, 0.5);
+  background: linear-gradient(135deg, #0f1419 0%, #1a1a2e 50%, #16213e 100%);
 }
 
 .floating-ball:active {
@@ -61,8 +57,14 @@ function handleClick() {
 }
 
 .ball-icon {
-  color: white;
-  font-size: 20px;
-  filter: drop-shadow(0 1px 2px rgba(255, 255, 255, 0.5));
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+  transition: transform 0.3s ease;
+}
+
+.ball-icon:hover {
+  transform: scale(1.1);
 }
 </style>

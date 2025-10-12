@@ -14,6 +14,8 @@ export interface Settings {
   custom_model: string;
   systemPrompt: string;
   enableContext: boolean;
+  maxContextRounds: number;
+  autoHideDialog: boolean;
   maxTokens: number;
   temperature: number;
 }
