@@ -80,29 +80,14 @@ export const appActions = {
   },
 
   updateLastMessage(content: string) {
-    console.log("updateLastMessage被调用:", content);
-    console.log("当前消息数量:", state.messages.length);
-
     if (state.messages.length > 0) {
       const lastMessage = state.messages[state.messages.length - 1];
-      console.log("最后一条消息:", lastMessage);
 
       if (!lastMessage.isUser) {
-        console.log("更新AI消息内容");
-        // 创建新的消息对象来触发响应式更新
-        const updatedMessage = {
-          ...lastMessage,
-          content: content,
-        };
-
-        // 替换整个数组来触发响应式更新
-        state.messages = [...state.messages.slice(0, -1), updatedMessage];
-        console.log("更新后的消息:", updatedMessage);
-      } else {
-        console.log("最后一条消息是用户消息，无法更新");
+        // 直接修改对象属性，Vue 会自动追踪响应式变化
+        // 类似 newme-ds: answerObj.value.content = answerObj.value.content + content
+        lastMessage.content = lastMessage.content + content;
       }
-    } else {
-      console.log("没有消息可以更新");
     }
   },
 

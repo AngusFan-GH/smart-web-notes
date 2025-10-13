@@ -5,7 +5,7 @@
       class="messages-scrollbar"
       @scroll="(args) => handleScroll(args.scrollTop)"
     >
-      <div class="messages" ref="messagesContainer">
+      <div class="messages">
         <!-- AI开场白 -->
         <div class="message-item assistant-message">
           <div class="message-content">
@@ -42,7 +42,7 @@
 
     <!-- 滚动到底部按钮 -->
     <el-button
-      v-if="!shouldAutoScroll && messages.length > 0"
+      v-if="!isAtBottom && messages.length > 0"
       class="scroll-to-bottom-btn"
       type="primary"
       :icon="ArrowDown"
@@ -54,9 +54,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick, onMounted, onUnmounted } from "vue";
-import { ElIcon, ElEmpty, ElButton, ElScrollbar } from "element-plus";
-import { User, Loading, ArrowDown } from "@element-plus/icons-vue";
+import { ref, watch, onMounted, nextTick } from "vue";
+import { ElButton, ElScrollbar } from "element-plus";
+import { ArrowDown } from "@element-plus/icons-vue";
 import { renderMarkdown } from "../../shared/utils/markdown";
 
 interface Message {
@@ -74,360 +74,143 @@ interface Props {
 
 const props = defineProps<Props>();
 
-const messagesContainer = ref<HTMLElement>();
 const scrollbarRef = ref();
-const isUserScrolling = ref(false);
-const shouldAutoScroll = ref(true);
-const forceUpdate = ref(0); // 用于强制重新渲染
+const isAtBottom = ref(true);
 
-// 滚动优化相关
-let scrollTimeout: NodeJS.Timeout | null = null;
-let isRendering = false; // 标记是否正在渲染
-let lastScrollHeight = 0; // 记录上次的滚动高度
-let scrollAnimationFrame: number | null = null; // 使用requestAnimationFrame优化滚动
-
-// 渲染内容缓存
+// 渲染内容缓存 - 简化为只存储已渲染的内容
 const renderedContentCache = ref<Map<string, string>>(new Map());
-const renderingPromises = ref<Map<string, Promise<string>>>(new Map());
 
-// 获取渲染内容（同步版本，从缓存获取）
+// 获取渲染内容（同步）
 const getRenderedContent = (messageId: string): string => {
-  return renderedContentCache.value.get(messageId) || "渲染中...";
+  const message = props.messages.find((m) => m.id === messageId);
+  if (!message) return "";
+
+  // 如果没有缓存，同步渲染（对于用户消息或简单文本）
+  if (!renderedContentCache.value.has(messageId)) {
+    // 对于流式更新的消息，立即渲染
+    renderMarkdown(message.content)
+      .then((result) => {
+        renderedContentCache.value.set(messageId, result);
+      })
+      .catch(() => {
+        const fallback = message.content.replace(/\n/g, "<br>");
+        renderedContentCache.value.set(messageId, fallback);
+      });
+
+    // 返回临时内容
+    return message.content.replace(/\n/g, "<br>");
+  }
+
+  return renderedContentCache.value.get(messageId) || message.content;
 };
 
-// 异步渲染Markdown内容
-const renderMarkdownContent = async (
-  content: string,
-  messageId: string,
-  forceRerender = false
-) => {
-  if (!content) {
-    return "";
-  }
-
-  // 如果强制重新渲染，清除现有缓存
-  if (forceRerender) {
-    renderedContentCache.value.delete(messageId);
-    renderingPromises.value.delete(messageId);
-  }
-
-  // 如果已经在渲染中且不是强制重新渲染，返回现有的Promise
-  if (renderingPromises.value.has(messageId) && !forceRerender) {
-    return renderingPromises.value.get(messageId)!;
-  }
-
-  // 创建渲染Promise
-  const renderPromise = (async () => {
-    try {
-      // 标记开始渲染
-      isRendering = true;
-
-      const result = await renderMarkdown(content);
-
-      // 缓存结果
-      renderedContentCache.value.set(messageId, result);
-      // 清理Promise缓存
-      renderingPromises.value.delete(messageId);
-
-      // 渲染完成
-      isRendering = false;
-
-      // 触发重新渲染
-      forceUpdate.value++;
-      return result;
-    } catch (error) {
-      const fallback = content.replace(/\n/g, "<br>");
-      renderedContentCache.value.set(messageId, fallback);
-      renderingPromises.value.delete(messageId);
-
-      // 渲染完成
-      isRendering = false;
-
-      forceUpdate.value++;
-      return fallback;
+// 滚动到底部（参考 newme-ds 的 handleDown 实现）
+const handleDown = () => {
+  setTimeout(() => {
+    if (scrollbarRef.value?.wrapRef) {
+      scrollbarRef.value.wrapRef.scrollTop =
+        scrollbarRef.value.wrapRef.scrollHeight;
     }
-  })();
-
-  // 缓存Promise
-  renderingPromises.value.set(messageId, renderPromise);
-  return renderPromise;
+  }, 100);
 };
 
-// 检查是否在底部附近
-const isNearBottom = () => {
-  if (!scrollbarRef.value) return true;
-  const scrollbar = scrollbarRef.value;
-  const threshold = 50; // 减少阈值，提高检测精度
-  const scrollTop = scrollbar.wrapRef.scrollTop;
-  const scrollHeight = scrollbar.wrapRef.scrollHeight;
-  const clientHeight = scrollbar.wrapRef.clientHeight;
-
-  return scrollHeight - scrollTop - clientHeight <= threshold;
-};
-
-// 处理用户滚动
+// 处理滚动事件（检测是否在底部）
 const handleScroll = (scrollTop: number) => {
-  if (!scrollbarRef.value) return;
+  if (!scrollbarRef.value?.wrapRef) return;
 
-  const nearBottom = isNearBottom();
+  const el = scrollbarRef.value.wrapRef;
+  const scrollHeight = el.scrollHeight;
+  const clientHeight = el.clientHeight;
 
-  // 如果用户手动向上滚动（远离底部），停止自动滚动
-  if (!nearBottom) {
-    shouldAutoScroll.value = false;
-    isUserScrolling.value = true;
-  } else {
-    // 如果用户滚动到底部附近，重新启用自动滚动
-    shouldAutoScroll.value = true;
-    isUserScrolling.value = false;
-  }
+  // 浏览器差异，小数点导致 1px 误差（参考 newme-ds）
+  isAtBottom.value = scrollTop + clientHeight + 1 >= scrollHeight;
 };
 
-// 平滑滚动到底部
-const scrollToBottom = (smooth = true, force = false) => {
-  // 如果不是强制滚动且用户不在底部，则不滚动
-  if (!force && !shouldAutoScroll.value) return;
-
-  // 清除之前的滚动请求
-  if (scrollAnimationFrame) {
-    cancelAnimationFrame(scrollAnimationFrame);
-  }
-  if (scrollTimeout) {
-    clearTimeout(scrollTimeout);
-  }
-
-  // 使用requestAnimationFrame确保在下一帧执行
-  scrollAnimationFrame = requestAnimationFrame(() => {
-    if (scrollbarRef.value) {
-      const wrapRef = scrollbarRef.value.wrapRef;
-      const scrollHeight = wrapRef.scrollHeight;
-      const currentScrollTop = wrapRef.scrollTop;
-      const clientHeight = wrapRef.clientHeight;
-
-      // 计算距离底部的距离
-      const distanceFromBottom = scrollHeight - currentScrollTop - clientHeight;
-
-      // 只有当内容高度超过容器高度且距离底部超过30px时才进行滚动
-      if (scrollHeight > clientHeight && distanceFromBottom > 30) {
-        // 记录新的滚动高度
-        lastScrollHeight = scrollHeight;
-
-        // 使用原生DOM的scrollTo方法
-        wrapRef.scrollTo({
-          top: scrollHeight,
-          behavior: smooth ? "smooth" : "auto",
-        });
-      }
-    }
-    scrollAnimationFrame = null;
-  });
-};
-
-// 强制滚动到底部（用于确保滚动）
-const forceScrollToBottom = (smooth = true) => {
-  if (!scrollbarRef.value) return;
-
-  // 清除之前的滚动请求
-  if (scrollAnimationFrame) {
-    cancelAnimationFrame(scrollAnimationFrame);
-  }
-  if (scrollTimeout) {
-    clearTimeout(scrollTimeout);
-  }
-
-  // 使用多重延迟确保DOM完全更新
-  scrollTimeout = setTimeout(() => {
-    if (scrollbarRef.value) {
-      const wrapRef = scrollbarRef.value.wrapRef;
-      const scrollHeight = wrapRef.scrollHeight;
-      const clientHeight = wrapRef.clientHeight;
-
-      // 只有当内容高度超过容器高度时才滚动
-      if (scrollHeight > clientHeight) {
-        wrapRef.scrollTo({
-          top: scrollHeight,
-          behavior: smooth ? "smooth" : "auto",
-        });
-
-        console.log(
-          "强制滚动到底部，scrollHeight:",
-          scrollHeight,
-          "clientHeight:",
-          clientHeight
-        );
-      } else {
-        console.log(
-          "内容未超过容器高度，无需滚动，scrollHeight:",
-          scrollHeight,
-          "clientHeight:",
-          clientHeight
-        );
-      }
-    }
-  }, 50); // 增加延迟确保DOM更新完成
-};
-
-// 手动滚动到底部（按钮点击时调用）
+// 手动滚动到底部（按钮点击）
 const handleScrollToBottom = () => {
-  if (scrollbarRef.value) {
-    const wrapRef = scrollbarRef.value.wrapRef;
-    const scrollHeight = wrapRef.scrollHeight;
-    const clientHeight = wrapRef.clientHeight;
-
-    // 只有当内容高度超过容器高度时才滚动
-    if (scrollHeight > clientHeight) {
-      wrapRef.scrollTo({
-        top: scrollHeight,
-        behavior: "smooth",
-      });
-
-      // 重新启用自动滚动
-      shouldAutoScroll.value = true;
-      isUserScrolling.value = false;
-
-      console.log(
-        "手动滚动到底部，scrollHeight:",
-        scrollHeight,
-        "clientHeight:",
-        clientHeight
-      );
-    } else {
-      console.log(
-        "内容未超过容器高度，无需滚动，scrollHeight:",
-        scrollHeight,
-        "clientHeight:",
-        clientHeight
-      );
-    }
+  if (scrollbarRef.value?.wrapRef) {
+    scrollbarRef.value.wrapRef.scrollTop =
+      scrollbarRef.value.wrapRef.scrollHeight;
+    isAtBottom.value = true;
   }
 };
 
-// 监听消息变化，自动滚动
+// 统一的消息更新处理（合并所有监听逻辑）
 watch(
-  () => props.messages.length,
-  (newLength, oldLength) => {
-    // 只有在消息数量增加时才滚动
-    if (newLength > oldLength) {
-      // 使用nextTick确保DOM更新后再滚动
-      nextTick(() => {
-        scrollToBottom();
-      });
-    }
-  },
-  { flush: "post" }
-);
+  () => [props.messages, props.isStreaming, props.isProcessing] as const,
+  async ([messages, isStreaming, isProcessing], [oldMessages]) => {
+    // 1. 处理新消息或内容变化
+    if (messages && messages.length > 0) {
+      const lastMessage = messages[messages.length - 1];
 
-// 监听消息内容变化（用于流式更新）
-watch(
-  () => props.messages,
-  (newMessages, oldMessages) => {
-    // 处理流式更新：重新渲染所有消息
-    if (newMessages && newMessages.length > 0) {
-      let hasStreamingMessage = false;
-
-      newMessages.forEach((message) => {
-        // 对于流式消息，每次都重新渲染
-        if (
-          props.isStreaming &&
-          message.id === newMessages[newMessages.length - 1].id
-        ) {
-          // 流式消息：强制重新渲染，确保数学公式被处理
-          renderMarkdownContent(message.content, message.id, true);
-          hasStreamingMessage = true;
-        } else if (!renderedContentCache.value.has(message.id)) {
-          // 非流式消息：只在没有缓存时渲染
-          renderMarkdownContent(message.content, message.id, false);
-        }
-      });
-
-      // 如果有流式消息且需要自动滚动，延迟滚动
-      if (hasStreamingMessage && props.isStreaming && shouldAutoScroll.value) {
-        // 使用较长的延迟确保DOM更新完成
-        setTimeout(() => {
-          scrollToBottom(true, false);
-        }, 100);
-      }
-    }
-  },
-  { deep: true, flush: "post" }
-);
-
-// 监听流式处理状态变化
-watch(
-  () => props.isStreaming,
-  (isStreaming, wasStreaming) => {
-    // 流式处理开始时强制滚动到底部
-    if (isStreaming) {
-      shouldAutoScroll.value = true;
-      isUserScrolling.value = false;
-      nextTick(() => {
-        scrollToBottom(true, true);
-      });
-    }
-
-    // 流式处理结束时，重新渲染最后一条消息确保内容完整
-    if (wasStreaming && !isStreaming && props.messages.length > 0) {
-      const lastMessage = props.messages[props.messages.length - 1];
-      if (lastMessage) {
-        // 清除缓存并重新渲染，确保显示最终内容
+      // 流式更新：强制重新渲染最后一条消息
+      if (isStreaming && lastMessage && !lastMessage.isUser) {
         renderedContentCache.value.delete(lastMessage.id);
-        renderingPromises.value.delete(lastMessage.id);
-        renderMarkdownContent(lastMessage.content, lastMessage.id, true);
 
-        // 确保最终内容显示后滚动到底部
-        nextTick(() => {
-          scrollToBottom(true, true);
-        });
+        await nextTick();
+
+        // 渲染最新内容
+        renderMarkdown(lastMessage.content)
+          .then((result) => {
+            renderedContentCache.value.set(lastMessage.id, result);
+          })
+          .catch(() => {
+            const fallback = lastMessage.content.replace(/\n/g, "<br>");
+            renderedContentCache.value.set(lastMessage.id, fallback);
+          });
+
+        // 流式更新时自动滚动（参考 newme-ds）
+        handleDown();
+      }
+      // 新消息添加：滚动到底部
+      else if (oldMessages && messages.length > oldMessages.length) {
+        // 渲染新消息
+        const newMessage = messages[messages.length - 1];
+        if (newMessage && !renderedContentCache.value.has(newMessage.id)) {
+          renderMarkdown(newMessage.content)
+            .then((result) => {
+              renderedContentCache.value.set(newMessage.id, result);
+            })
+            .catch(() => {
+              const fallback = newMessage.content.replace(/\n/g, "<br>");
+              renderedContentCache.value.set(newMessage.id, fallback);
+            });
+        }
+
+        handleDown();
       }
     }
-  },
-  { flush: "post" }
-);
 
-// 监听处理状态变化
-watch(
-  () => props.isProcessing,
-  (isProcessing) => {
-    // 开始处理时滚动到底部
-    if (isProcessing) {
-      scrollToBottom(false);
+    // 2. 处理状态变化时的滚动
+    if (isProcessing || isStreaming) {
+      handleDown();
     }
   },
-  { flush: "post" }
+  { deep: true, flush: "post", immediate: false }
 );
 
-// 组件挂载时渲染所有现有消息
-onMounted(() => {
+// 组件挂载时初始化
+onMounted(async () => {
   // 渲染所有现有消息
   if (props.messages && props.messages.length > 0) {
-    props.messages.forEach((message) => {
+    for (const message of props.messages) {
       if (!renderedContentCache.value.has(message.id)) {
-        renderMarkdownContent(message.content, message.id);
+        await renderMarkdown(message.content)
+          .then((result) => {
+            renderedContentCache.value.set(message.id, result);
+          })
+          .catch(() => {
+            const fallback = message.content.replace(/\n/g, "<br>");
+            renderedContentCache.value.set(message.id, fallback);
+          });
       }
-    });
+    }
   }
 
   // 初始化时滚动到底部
-  nextTick(() => {
-    scrollToBottom(false, true);
-  });
-
-  // 初始化完成
+  await nextTick();
+  handleDown();
 });
-
-// 组件卸载时清理
-onUnmounted(() => {
-  // 清理定时器
-  if (scrollTimeout) {
-    clearTimeout(scrollTimeout);
-  }
-
-  // 清理动画帧
-  if (scrollAnimationFrame) {
-    cancelAnimationFrame(scrollAnimationFrame);
-  }
-});
-
-// 数学渲染器已集成，无需监听外部事件
 </script>
 
 <style scoped>

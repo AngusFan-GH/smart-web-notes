@@ -206,18 +206,12 @@ function resetStreamState() {
 
 // 处理停止流式事件
 function handleStopStreaming() {
-  console.log("App.vue: 收到停止流式事件");
-  console.log("停止前状态:", stateManager.getState());
   resetStreamState();
-  console.log("停止后状态:", stateManager.getState());
-  console.log("App.vue: 流式处理已停止");
 }
 
 // 处理流式数据块
 function handleStreamChunk(data: any) {
-  console.log("收到流式数据块:", data);
-
-  if (data.type === "chunk" && data.fullResponse) {
+  if (data.type === "chunk" && data.content) {
     // 开始流式处理
     stateManager.startStreaming();
 
@@ -229,15 +223,13 @@ function handleStreamChunk(data: any) {
       appState.messages.value.length === 0 ||
       appState.messages.value[appState.messages.value.length - 1].isUser
     ) {
-      console.log("添加新的AI消息");
       appActions.addMessage("", false);
     }
 
-    // 更新最后一条消息
-    appActions.updateLastMessage(data.fullResponse);
+    // 直接追加增量内容（类似 newme-ds 的处理方式）
+    appActions.updateLastMessage(data.content);
   } else if (data.type === "done") {
     // 检测到流式完成信号
-    console.log("Content Script: 检测到流式完成信号");
 
     // 完成流式处理
     stateManager.completeStreaming();
@@ -258,18 +250,9 @@ function handleStreamChunk(data: any) {
       appActions.setStreaming(false);
       appActions.setGenerating(false);
 
-      // 调试：检查状态是否正确更新
-      console.log("流式完成后的状态:", {
-        isStreaming: appState.isStreaming.value,
-        isGenerating: appState.isGenerating.value,
-        isProcessing: appState.isProcessing.value,
-        stateManager: stateManager.getState(),
-      });
-
       // 延迟检查，如果状态仍然不正确则强制重置
       setTimeout(() => {
         if (appState.isStreaming.value || appState.isGenerating.value) {
-          console.log("检测到状态异常，强制重置");
           appActions.setStreaming(false);
           appActions.setGenerating(false);
         }
