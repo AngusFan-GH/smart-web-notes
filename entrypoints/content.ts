@@ -2,7 +2,7 @@
 export default defineContentScript({
   matches: ["<all_urls>"],
   main() {
-    console.log("Smart Web Notes Vue3 Content Script Started");
+    console.log("Web Assistant Vue3 Content Script Started");
 
     // 确保DOM准备就绪后再导入Vue3应用
     function initVueApp() {

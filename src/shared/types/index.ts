@@ -18,6 +18,7 @@ export interface Settings {
   autoHideDialog: boolean;
   maxTokens: number;
   temperature: number;
+  showProcessingSteps: boolean;
 }
 
 export interface ApiRequest {

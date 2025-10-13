@@ -11,6 +11,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoHideDialog: true,
   maxTokens: 2048,
   temperature: 0.7,
+  showProcessingSteps: false,
 } as const;
 
 export const API_CONFIG_INFO = {

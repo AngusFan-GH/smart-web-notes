@@ -10,6 +10,7 @@
 
     <!-- 对话框内容 -->
     <div class="dialog-content">
+      <ProcessingSteps />
       <ChatMessages
         :messages="appState.messages.value"
         :is-processing="appState.isProcessing.value"
@@ -57,10 +58,24 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, onUnmounted, computed } from "vue";
 import { appState, appActions } from "../../shared/stores/appStore";
-import type { ChromeMessage, ChromeResponse } from "../../shared/types";
+import {
+  handleError,
+  getUserFriendlyMessage,
+  isRetryable,
+  getSuggestedAction,
+} from "../../shared/utils/errorHandler";
+import {
+  userFeedback,
+  showProcessingSteps,
+  startStep,
+  completeStep,
+  errorStep,
+} from "../../shared/utils/userFeedback";
+import { stateManager } from "../../shared/utils/stateManager";
 import DialogHeader from "./DialogHeader.vue";
 import ChatMessages from "./ChatMessages.vue";
 import ChatInput from "./ChatInput.vue";
+import ProcessingSteps from "./ProcessingSteps.vue";
 
 // 声明chrome类型
 declare const chrome: any;
@@ -82,6 +97,22 @@ const emit = defineEmits<{
 const userInput = ref("");
 const chatInputRef = ref();
 
+// 页面上下文
+const pageContext = computed(() => {
+  try {
+    return {
+      url: typeof window !== "undefined" ? window.location.href : "",
+      title: typeof document !== "undefined" ? document.title : "",
+    };
+  } catch (error) {
+    console.warn("无法获取页面上下文:", error);
+    return {
+      url: "",
+      title: "",
+    };
+  }
+});
+
 // 对话框位置和大小
 const dialogPosition = reactive({
   left: "auto",
@@ -99,7 +130,8 @@ const dialogSize = reactive({
 // 计算样式
 const dialogStyle = computed(() => {
   const area = calculateAvailableArea();
-  const isMobile = window.innerWidth <= 768;
+  const isMobile =
+    typeof window !== "undefined" ? window.innerWidth <= 768 : false;
 
   // 如果对话框位置是自定义的，需要检查是否超出屏幕范围
   if (dialogPosition.isCustomPosition) {
@@ -204,25 +236,35 @@ const MARGIN_CONFIG = {
 
 // 获取滚动条宽度
 function getScrollbarWidth() {
-  // 创建临时元素来测量滚动条宽度
-  const outer = document.createElement("div");
-  outer.style.visibility = "hidden";
-  outer.style.overflow = "scroll";
-  (outer.style as any).msOverflowStyle = "scrollbar";
-  document.body.appendChild(outer);
+  if (typeof document === "undefined") {
+    return 0; // 如果document不可用，返回0
+  }
 
-  const inner = document.createElement("div");
-  outer.appendChild(inner);
+  try {
+    // 创建临时元素来测量滚动条宽度
+    const outer = document.createElement("div");
+    outer.style.visibility = "hidden";
+    outer.style.overflow = "scroll";
+    (outer.style as any).msOverflowStyle = "scrollbar";
+    document.body.appendChild(outer);
 
-  const scrollbarWidth = outer.offsetWidth - inner.offsetWidth;
-  outer.parentNode?.removeChild(outer);
+    const inner = document.createElement("div");
+    outer.appendChild(inner);
 
-  return scrollbarWidth;
+    const scrollbarWidth = outer.offsetWidth - inner.offsetWidth;
+    outer.parentNode?.removeChild(outer);
+
+    return scrollbarWidth;
+  } catch (error) {
+    console.warn("无法获取滚动条宽度:", error);
+    return 0;
+  }
 }
 
 // 计算可用区域尺寸
 function calculateAvailableArea() {
-  const isMobile = window.innerWidth <= 768;
+  const isMobile =
+    typeof window !== "undefined" ? window.innerWidth <= 768 : false;
   const scrollbarWidth = getScrollbarWidth();
   const config = isMobile ? MARGIN_CONFIG.mobile : MARGIN_CONFIG;
 
@@ -236,11 +278,16 @@ function calculateAvailableArea() {
     bottomMargin: config.base + config.scrollbar,
     // 计算可用区域
     availableWidth:
-      window.innerWidth - config.base - scrollbarWidth - config.scrollbar,
-    availableHeight: window.innerHeight - config.base - config.scrollbar,
+      typeof window !== "undefined"
+        ? window.innerWidth - config.base - scrollbarWidth - config.scrollbar
+        : 800,
+    availableHeight:
+      typeof window !== "undefined"
+        ? window.innerHeight - config.base - config.scrollbar
+        : 600,
     // 原始窗口尺寸
-    windowWidth: window.innerWidth,
-    windowHeight: window.innerHeight,
+    windowWidth: typeof window !== "undefined" ? window.innerWidth : 800,
+    windowHeight: typeof window !== "undefined" ? window.innerHeight : 600,
   };
 }
 
@@ -391,6 +438,10 @@ async function sendMessage() {
     (window as any).resetStreamState();
   }
 
+  // 显示处理步骤
+  const steps = userFeedback.generateContentAnalysisSteps();
+  showProcessingSteps(steps);
+
   // 设置新的生成状态
   appActions.setGenerating(true);
   // 注意：不在这里设置 isStreaming，等待第一个流式数据块到达时设置
@@ -399,10 +450,15 @@ async function sendMessage() {
     // 添加用户消息
     appActions.addMessage(message, true);
 
-    // 获取页面内容
+    // 步骤1：准备内容（合并了原来的三个快速步骤）
+    startStep("prepare_content");
     const pageContent = (window as any).parseWebContent
       ? (window as any).parseWebContent()
       : "";
+    completeStep(
+      "prepare_content",
+      `已准备 ${pageContent.length} 个字符的内容，正在生成智能提示词...`
+    );
 
     // 构建对话历史
     const conversationHistory = appState.messages.value
@@ -412,7 +468,8 @@ async function sendMessage() {
         content: msg.content,
       }));
 
-    // 发送消息到Background Script
+    // 步骤4：开始AI对话处理
+    startStep("ai_conversation");
     const response = await chrome.runtime.sendMessage({
       action: "generateAnswer",
       data: {
@@ -420,6 +477,7 @@ async function sendMessage() {
         pageContent: pageContent,
         tabId: "current",
         conversationHistory: conversationHistory,
+        url: pageContext.value.url,
       },
     });
 
@@ -428,17 +486,40 @@ async function sendMessage() {
     if (!response.success) {
       throw new Error(response.error || "未知错误");
     }
+
+    // 注意：不在这里完成步骤，因为流式处理还在进行中
+    // 步骤完成将在App.vue的handleStreamChunk中处理
   } catch (error) {
     console.error("发送消息失败:", error);
-    appActions.addMessage(
-      `抱歉，发送消息时出现错误：${
-        error instanceof Error ? error.message : String(error)
-      }`,
-      false
-    );
+
+    // 标记当前步骤为错误
+    const currentStep = userFeedback.getCurrentStep();
+    if (currentStep) {
+      errorStep(currentStep.id, "处理失败");
+    }
+
+    // 使用新的错误处理机制
+    const errorInfo = handleError(error);
+    const userMessage = getUserFriendlyMessage(error);
+    const suggestedAction = getSuggestedAction(error);
+
+    // 构建用户友好的错误消息
+    let errorMessage = `❌ ${userMessage}`;
+    if (suggestedAction) {
+      errorMessage += `\n\n💡 建议操作：${suggestedAction}`;
+    }
+
+    // 如果是可重试的错误，添加重试按钮提示
+    if (isRetryable(error)) {
+      errorMessage += `\n\n🔄 您可以稍后重试此操作`;
+    }
+
+    appActions.addMessage(errorMessage, false);
   } finally {
-    appActions.setGenerating(false);
-    appActions.setStreaming(false);
+    // 注意：不要在这里重置流式状态，因为流式处理可能还在进行中
+    // 流式状态会在App.vue的handleStreamChunk中管理
+    // appActions.setGenerating(false);
+    // appActions.setStreaming(false);
   }
 }
 
@@ -454,10 +535,12 @@ function handleKeydown(e: Event) {
 // 停止生成
 async function stopGeneration() {
   console.log("用户点击停止生成");
+  console.log("停止前状态:", stateManager.getState());
 
-  // 停止所有处理状态
-  appActions.setStreaming(false);
-  appActions.setGenerating(false);
+  // 使用stateManager停止处理
+  stateManager.stopStreaming();
+
+  console.log("停止后状态:", stateManager.getState());
 
   // 清空输入框
   userInput.value = "";
@@ -481,34 +564,11 @@ async function stopGeneration() {
   console.log("已停止生成");
 }
 
-// 解析网页内容
+import { parseWebContent as extractContent } from "../../shared/utils/contentExtractor";
+
+// 解析网页内容 - 使用优化后的提取器
 function parseWebContent(): string {
-  // 克隆当前文档以供解析，不影响原始页面
-  const docClone = document.cloneNode(true) as Document;
-
-  // 在克隆的文档中移除不需要的元素
-  const scripts = docClone.querySelectorAll("script");
-  const styles = docClone.querySelectorAll('style, link[rel="stylesheet"]');
-  const headers = docClone.querySelectorAll("header, nav");
-  const footers = docClone.querySelectorAll("footer");
-
-  // 从克隆的文档中移除元素
-  [...scripts, ...styles, ...headers, ...footers].forEach((element) => {
-    if (element.parentNode) {
-      element.parentNode.removeChild(element);
-    }
-  });
-
-  // 获取主要内容（从body中提取）
-  const mainContent = docClone.querySelector("body");
-
-  // 如果找到了body元素，获取其文本内容
-  const textContent = mainContent ? mainContent.innerText : "";
-
-  // 清理文本
-  return textContent
-    .replace(/\s+/g, " ") // 将多个空白字符替换为单个空格
-    .trim(); // 移除首尾空白
+  return extractContent();
 }
 
 // 处理对话框鼠标按下
@@ -757,6 +817,12 @@ onUnmounted(() => {
   backdrop-filter: blur(20px);
 }
 
+/* 确保聊天消息区域有足够空间 */
+.dialog-content > :last-child {
+  flex: 1;
+  min-height: 0; /* 允许flex子项收缩 */
+}
+
 /* 对话框底部 */
 .dialog-footer {
   background: linear-gradient(
@@ -985,6 +1051,31 @@ onUnmounted(() => {
   );
   border-radius: 50% 0 50% 0;
   clip-path: polygon(0% 0%, 100% 0%, 0% 100%);
+}
+
+/* 小尺寸对话框优化 */
+@media (max-height: 400px) {
+  .dialog-content {
+    min-height: 120px;
+    max-height: calc(100% - 100px);
+  }
+
+  .dialog-footer {
+    padding: 12px 20px;
+    min-height: 60px;
+  }
+}
+
+@media (max-height: 300px) {
+  .dialog-content {
+    min-height: 80px;
+    max-height: calc(100% - 80px);
+  }
+
+  .dialog-footer {
+    padding: 8px 20px;
+    min-height: 50px;
+  }
 }
 
 /* 响应式设计已通过JavaScript边距配置系统处理，无需额外CSS */

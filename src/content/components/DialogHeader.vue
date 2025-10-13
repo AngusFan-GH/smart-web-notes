@@ -1,11 +1,7 @@
 <template>
   <div class="dialog-header" @mousedown="handleHeaderMouseDown">
     <div class="dialog-title">
-      <img
-        src="../icons/icon16.png"
-        alt="Smart Web Notes"
-        class="dialog-icon"
-      />
+      <img src="../icons/icon16.png" alt="Web Assistant" class="dialog-icon" />
       <span>{{ title }}</span>
     </div>
     <div class="dialog-controls">
@@ -30,7 +26,7 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  title: "Smart Web Notes",
+  title: "Web Assistant",
 });
 
 const emit = defineEmits<{

@@ -1,6 +1,6 @@
 <template>
   <div v-if="visible" class="floating-ball" @click="handleClick">
-    <img src="../icons/icon16.png" alt="Smart Web Notes" class="ball-icon" />
+    <img src="../icons/icon16.png" alt="Web Assistant" class="ball-icon" />
   </div>
 </template>
 

@@ -81,7 +81,7 @@ const shouldAutoScroll = ref(true);
 const forceUpdate = ref(0); // 用于强制重新渲染
 
 // 滚动优化相关
-let scrollTimeout: number | null = null;
+let scrollTimeout: NodeJS.Timeout | null = null;
 let isRendering = false; // 标记是否正在渲染
 let lastScrollHeight = 0; // 记录上次的滚动高度
 let scrollAnimationFrame: number | null = null; // 使用requestAnimationFrame优化滚动
@@ -206,8 +206,8 @@ const scrollToBottom = (smooth = true, force = false) => {
       // 计算距离底部的距离
       const distanceFromBottom = scrollHeight - currentScrollTop - clientHeight;
 
-      // 如果距离底部超过30px，才进行滚动
-      if (distanceFromBottom > 30) {
+      // 只有当内容高度超过容器高度且距离底部超过30px时才进行滚动
+      if (scrollHeight > clientHeight && distanceFromBottom > 30) {
         // 记录新的滚动高度
         lastScrollHeight = scrollHeight;
 
@@ -222,23 +222,82 @@ const scrollToBottom = (smooth = true, force = false) => {
   });
 };
 
+// 强制滚动到底部（用于确保滚动）
+const forceScrollToBottom = (smooth = true) => {
+  if (!scrollbarRef.value) return;
+
+  // 清除之前的滚动请求
+  if (scrollAnimationFrame) {
+    cancelAnimationFrame(scrollAnimationFrame);
+  }
+  if (scrollTimeout) {
+    clearTimeout(scrollTimeout);
+  }
+
+  // 使用多重延迟确保DOM完全更新
+  scrollTimeout = setTimeout(() => {
+    if (scrollbarRef.value) {
+      const wrapRef = scrollbarRef.value.wrapRef;
+      const scrollHeight = wrapRef.scrollHeight;
+      const clientHeight = wrapRef.clientHeight;
+
+      // 只有当内容高度超过容器高度时才滚动
+      if (scrollHeight > clientHeight) {
+        wrapRef.scrollTo({
+          top: scrollHeight,
+          behavior: smooth ? "smooth" : "auto",
+        });
+
+        console.log(
+          "强制滚动到底部，scrollHeight:",
+          scrollHeight,
+          "clientHeight:",
+          clientHeight
+        );
+      } else {
+        console.log(
+          "内容未超过容器高度，无需滚动，scrollHeight:",
+          scrollHeight,
+          "clientHeight:",
+          clientHeight
+        );
+      }
+    }
+  }, 50); // 增加延迟确保DOM更新完成
+};
+
 // 手动滚动到底部（按钮点击时调用）
 const handleScrollToBottom = () => {
   if (scrollbarRef.value) {
     const wrapRef = scrollbarRef.value.wrapRef;
     const scrollHeight = wrapRef.scrollHeight;
+    const clientHeight = wrapRef.clientHeight;
 
-    // 使用原生DOM的scrollTo方法，确保滚动到底部
-    wrapRef.scrollTo({
-      top: scrollHeight,
-      behavior: "smooth",
-    });
+    // 只有当内容高度超过容器高度时才滚动
+    if (scrollHeight > clientHeight) {
+      wrapRef.scrollTo({
+        top: scrollHeight,
+        behavior: "smooth",
+      });
 
-    // 重新启用自动滚动
-    shouldAutoScroll.value = true;
-    isUserScrolling.value = false;
+      // 重新启用自动滚动
+      shouldAutoScroll.value = true;
+      isUserScrolling.value = false;
 
-    console.log("手动滚动到底部，scrollHeight:", scrollHeight);
+      console.log(
+        "手动滚动到底部，scrollHeight:",
+        scrollHeight,
+        "clientHeight:",
+        clientHeight
+      );
+    } else {
+      console.log(
+        "内容未超过容器高度，无需滚动，scrollHeight:",
+        scrollHeight,
+        "clientHeight:",
+        clientHeight
+      );
+    }
   }
 };
 
@@ -248,7 +307,10 @@ watch(
   (newLength, oldLength) => {
     // 只有在消息数量增加时才滚动
     if (newLength > oldLength) {
-      scrollToBottom();
+      // 使用nextTick确保DOM更新后再滚动
+      nextTick(() => {
+        scrollToBottom();
+      });
     }
   },
   { flush: "post" }

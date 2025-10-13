@@ -30,7 +30,7 @@ export default defineConfig({
     },
   }),
   manifest: {
-    name: "Smart Web Notes",
+    name: "Web Assistant",
     description: "AI-powered web content analysis",
     version: "1.0",
     permissions: ["activeTab", "scripting", "storage"],
@@ -42,7 +42,7 @@ export default defineConfig({
     },
     action: {
       default_popup: "popup.html",
-      default_title: "Smart Web Notes",
+      default_title: "Web Assistant",
     },
     content_scripts: [
       {
@@ -52,12 +52,7 @@ export default defineConfig({
     ],
     web_accessible_resources: [
       {
-        resources: [
-          "lib/*.js",
-          "assets/*",
-          "workers/*.js",
-          "icons/*.png",
-        ],
+        resources: ["lib/*.js", "assets/*", "workers/*.js", "icons/*.png"],
         matches: ["<all_urls>"],
       },
     ],

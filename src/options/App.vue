@@ -4,8 +4,8 @@
     <div class="tab-header">
       <div class="header-content">
         <div class="title-section">
-          <img src="/icons/icon32.png" alt="Smart Web Notes" class="app-logo" />
-          <h3 class="title">Smart Web Notes 设置</h3>
+          <img src="/icons/icon32.png" alt="Web Assistant" class="app-logo" />
+          <h3 class="title">Web Assistant 设置</h3>
         </div>
         <div class="status-indicator">
           <el-icon class="status-icon">
@@ -121,6 +121,17 @@
                 />
                 <el-text class="help-text" type="info" size="small">
                   点击对话框外部时自动隐藏对话框
+                </el-text>
+              </el-form-item>
+
+              <el-form-item label="显示处理进度">
+                <el-switch
+                  v-model="settings.showProcessingSteps"
+                  active-text="启用"
+                  inactive-text="禁用"
+                />
+                <el-text class="help-text" type="info" size="small">
+                  显示AI处理过程中的详细步骤进度
                 </el-text>
               </el-form-item>
 

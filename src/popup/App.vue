@@ -2,8 +2,8 @@
   <div class="container">
     <div class="header">
       <div class="title-section">
-        <img src="/icons/icon32.png" alt="Smart Web Notes" class="app-logo" />
-        <h3 class="title">Smart Web Notes</h3>
+        <img src="/icons/icon32.png" alt="Web Assistant" class="app-logo" />
+        <h3 class="title">Web Assistant</h3>
       </div>
       <div class="status-indicator" :class="statusClass">
         <el-icon class="status-icon">

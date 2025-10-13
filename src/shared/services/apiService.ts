@@ -1,4 +1,5 @@
 import type { Settings, ApiRequest, StreamChunk } from "../types";
+import { generateSmartPrompt } from "../utils/promptManager";
 
 export class ApiService {
   private static instance: ApiService;
@@ -48,7 +49,11 @@ export class ApiService {
     onComplete: (fullResponse: string) => void,
     onError: (error: string) => void,
     abortController?: AbortController,
-    conversationHistory?: Array<{ role: "user" | "assistant"; content: string }>
+    conversationHistory?: Array<{
+      role: "user" | "assistant";
+      content: string;
+    }>,
+    url?: string
   ): Promise<void> {
     try {
       // 验证配置
@@ -57,10 +62,16 @@ export class ApiService {
         throw new Error(validation.error);
       }
 
-      // 构建消息
-      const messages = this.buildMessages(
+      // 生成智能提示词
+      const promptTemplate = generateSmartPrompt(
         question,
         pageContent,
+        url || (typeof window !== "undefined" ? window.location.href : "")
+      );
+
+      // 构建消息
+      const messages = this.buildMessagesWithPrompt(
+        promptTemplate,
         conversationHistory
       );
 
@@ -91,6 +102,50 @@ export class ApiService {
     }
   }
 
+  private buildMessagesWithPrompt(
+    promptTemplate: any,
+    conversationHistory?: Array<{ role: "user" | "assistant"; content: string }>
+  ): Array<{ role: "system" | "user" | "assistant"; content: string }> {
+    const messages: Array<{
+      role: "system" | "user" | "assistant";
+      content: string;
+    }> = [];
+
+    // 使用智能系统提示词
+    messages.push({
+      role: "system",
+      content: promptTemplate.system,
+    });
+
+    // 添加对话历史（如果启用上下文聊天）
+    if (
+      this.settings?.enableContext &&
+      conversationHistory &&
+      conversationHistory.length > 0
+    ) {
+      // 限制对话轮数
+      const maxRounds = this.settings.maxContextRounds || 5;
+      const limitedHistory = conversationHistory.slice(-maxRounds * 2); // 每轮包含一问一答
+
+      // 添加历史对话
+      limitedHistory.forEach((msg) => {
+        messages.push({
+          role: msg.role,
+          content: msg.content,
+        });
+      });
+    }
+
+    // 使用智能用户提示词
+    messages.push({
+      role: "user",
+      content: promptTemplate.user,
+    });
+
+    return messages;
+  }
+
+  // 保留原有方法以向后兼容
   private buildMessages(
     question: string,
     pageContent: string,

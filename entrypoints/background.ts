@@ -6,7 +6,7 @@ import type {
 } from "../src/shared/types";
 
 export default defineBackground(() => {
-  console.log("Smart Web Notes Background Script Started");
+  console.log("Web Assistant Background Script Started");
 
   // 存储当前流式请求的AbortController
   let currentStreamController: AbortController | null = null;
@@ -106,7 +106,7 @@ export default defineBackground(() => {
     sendResponse: (response: ChromeResponse) => void
   ) {
     try {
-      const { question, pageContent, conversationHistory } = data;
+      const { question, pageContent, conversationHistory, url } = data;
 
       if (!question) {
         sendResponse({
@@ -210,7 +210,8 @@ export default defineBackground(() => {
               });
           },
           currentStreamController,
-          conversationHistory
+          conversationHistory,
+          url
         );
       } catch (error) {
         // 重置流式状态
