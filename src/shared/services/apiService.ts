@@ -42,6 +42,48 @@ export class ApiService {
     return { valid: true };
   }
 
+  public async generateSuggestedQuestions(
+    prompt: string,
+    max_tokens: number = 200,
+    temperature: number = 0.7
+  ): Promise<any> {
+    try {
+      // 验证配置
+      const validation = this.validateSettings();
+      if (!validation.valid) {
+        throw new Error(validation.error);
+      }
+
+      // 获取API配置
+      const { custom_apiBase, custom_apiKey, custom_model } = this.settings!;
+
+      // 构建请求
+      const request: ApiRequest = {
+        model: custom_model,
+        messages: [
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+        max_tokens,
+        temperature,
+        stream: false, // 建议问题不需要流式
+      };
+
+      // 发送请求
+      const response = await this.sendNonStreamRequest(
+        custom_apiBase,
+        custom_apiKey,
+        request
+      );
+
+      return response;
+    } catch (error) {
+      throw new Error(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   public async generateAnswer(
     question: string,
     pageContent: string,
@@ -113,10 +155,11 @@ export class ApiService {
       content: string;
     }> = [];
 
-    // 使用智能系统提示词
+    // 优先使用用户配置的系统提示词，否则使用智能系统提示词
+    const systemPrompt = this.settings?.systemPrompt || promptTemplate.system;
     messages.push({
       role: "system",
-      content: promptTemplate.system,
+      content: systemPrompt,
     });
 
     // 添加对话历史（如果启用上下文聊天）
@@ -308,6 +351,32 @@ export class ApiService {
       // 其他错误正常处理
       onError(error instanceof Error ? error.message : String(error));
     }
+  }
+
+  private async sendNonStreamRequest(
+    apiBase: string,
+    apiKey: string,
+    request: ApiRequest
+  ): Promise<any> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+
+    if (apiKey) {
+      headers["Authorization"] = `Bearer ${apiKey}`;
+    }
+
+    const response = await fetch(apiBase, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API请求失败: ${response.status} ${response.statusText}`);
+    }
+
+    return await response.json();
   }
 }
 

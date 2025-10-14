@@ -220,6 +220,32 @@ class LightweightMathRenderer {
         color: rgba(255, 255, 255, 0.5);
         text-transform: uppercase;
       }
+      /* 列表样式 */
+      ol, ul {
+        margin: 0.5em 0;
+        padding-left: 1.5em;
+        line-height: 1.6;
+      }
+      ol {
+        list-style-type: decimal;
+      }
+      ul {
+        list-style-type: disc;
+      }
+      li {
+        margin: 0.25em 0;
+        padding-left: 0.25em;
+      }
+      /* 嵌套列表 */
+      ol ol, ul ul, ol ul, ul ol {
+        margin: 0.25em 0;
+        padding-left: 1em;
+      }
+      /* 列表项内容 */
+      li p {
+        margin: 0.25em 0;
+        display: inline;
+      }
     `;
     document.head.appendChild(style);
   }

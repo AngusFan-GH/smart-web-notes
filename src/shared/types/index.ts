@@ -19,6 +19,7 @@ export interface Settings {
   maxTokens: number;
   temperature: number;
   showProcessingSteps: boolean;
+  enableSuggestedQuestions: boolean;
 }
 
 export interface ApiRequest {

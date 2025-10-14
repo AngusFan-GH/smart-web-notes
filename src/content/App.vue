@@ -301,4 +301,40 @@ function parseWebContent(): string {
 #ai-assistant-content * {
   box-sizing: border-box;
 }
+
+/* 恢复列表样式，因为all: initial会重置它们 */
+#ai-assistant-content ol,
+#ai-assistant-content ul {
+  margin: 0.5em 0;
+  padding-left: 1.5em;
+  line-height: 1.6;
+}
+
+#ai-assistant-content ol {
+  list-style-type: decimal;
+}
+
+#ai-assistant-content ul {
+  list-style-type: disc;
+}
+
+#ai-assistant-content li {
+  margin: 0.25em 0;
+  padding-left: 0.25em;
+}
+
+/* 嵌套列表 */
+#ai-assistant-content ol ol,
+#ai-assistant-content ul ul,
+#ai-assistant-content ol ul,
+#ai-assistant-content ul ol {
+  margin: 0.25em 0;
+  padding-left: 1em;
+}
+
+/* 列表项内容 */
+#ai-assistant-content li p {
+  margin: 0.25em 0;
+  display: inline;
+}
 </style>

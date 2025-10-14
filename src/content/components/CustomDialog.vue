@@ -16,12 +16,38 @@
         :is-processing="appState.isProcessing.value"
         :is-streaming="appState.isStreaming.value"
       />
+
+      <!-- 智能问题推荐 -->
+      <SuggestedQuestions
+        :visible="showSuggestedQuestions"
+        :questions="suggestedQuestions.slice(0, 3)"
+        @question-click="useSuggestedQuestion"
+      />
     </div>
 
     <!-- 对话框底部 -->
     <div class="dialog-footer">
       <div class="dialog-toolbar-actions">
-        <el-tooltip content="重拉取 GET 端点" placement="top">
+        <el-tooltip
+          v-if="appState.messages.value.length > 0"
+          content="清空消息"
+          placement="top"
+        >
+          <el-button
+            type="danger"
+            size="small"
+            :disabled="appState.isProcessing.value"
+            @click="clearMessages"
+          >
+            <el-icon><Delete /></el-icon>
+            <span class="btn-text">清空</span>
+          </el-button>
+        </el-tooltip>
+        <el-tooltip
+          v-if="hasRefetchableEndpoints"
+          content="拉取 API 端点"
+          placement="top"
+        >
           <el-button
             type="warning"
             size="small"
@@ -29,8 +55,8 @@
             :disabled="appState.isProcessing.value || isRefetching"
             @click="refetchGetEndpoints"
           >
-            <el-icon style="margin-right: 6px"><RefreshRight /></el-icon>
-            <span class="btn-text">重拉取 GET 端点</span>
+            <el-icon><RefreshRight /></el-icon>
+            <span class="btn-text">拉取</span>
           </el-button>
         </el-tooltip>
       </div>
@@ -70,7 +96,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted, computed } from "vue";
+import { ref, reactive, onMounted, onUnmounted, computed, watch } from "vue";
 import { appState, appActions } from "../../shared/stores/appStore";
 import {
   handleError,
@@ -90,6 +116,8 @@ import DialogHeader from "./DialogHeader.vue";
 import ChatMessages from "./ChatMessages.vue";
 import ChatInput from "./ChatInput.vue";
 import ProcessingSteps from "./ProcessingSteps.vue";
+import SuggestedQuestions from "./SuggestedQuestions.vue";
+import { Delete, RefreshRight } from "@element-plus/icons-vue";
 
 // 声明chrome类型
 declare const chrome: any;
@@ -111,6 +139,17 @@ const emit = defineEmits<{
 const userInput = ref("");
 const chatInputRef = ref();
 const isRefetching = ref(false);
+const hasRefetchableEndpoints = ref(false);
+
+// 智能问题推荐相关
+const suggestedQuestions = ref<string[]>([]);
+const showSuggestedQuestions = computed(() => {
+  return (
+    appState.messages.value.length === 0 &&
+    suggestedQuestions.value.length > 0 &&
+    appState.settings.value?.enableSuggestedQuestions !== false
+  );
+});
 
 // 页面上下文
 const pageContext = computed(() => {
@@ -136,10 +175,10 @@ const dialogPosition = reactive({
 });
 
 const dialogSize = reactive({
-  width: 400,
-  height: 500,
+  width: 360,
+  height: 600,
   minWidth: 300,
-  minHeight: 400,
+  minHeight: 500,
 });
 
 // 计算样式
@@ -316,6 +355,28 @@ onMounted(async () => {
 
   // 添加背景点击监听（用于自动隐藏对话框）
   document.addEventListener("mousedown", handleBackgroundClick);
+
+  // 初始化一次可拉取端点状态
+  updateRefetchableStatus();
+
+  // 生成建议问题（等待设置加载完成）
+  setTimeout(async () => {
+    await generateSuggestedQuestions();
+  }, 100);
+
+  // 监听设置变化，重新生成推荐问题
+  watch(
+    () => appState.settings.value?.enableSuggestedQuestions,
+    async (newValue) => {
+      if (newValue === false) {
+        // 如果禁用了推荐问题，清空现有问题
+        suggestedQuestions.value = [];
+      } else if (newValue === true && appState.messages.value.length === 0) {
+        // 如果启用了推荐问题且没有消息，重新生成
+        await generateSuggestedQuestions();
+      }
+    }
+  );
 });
 
 // 防抖处理窗口大小变化
@@ -486,6 +547,8 @@ async function sendMessage() {
         忽略请求: debugInfo.ignoredRequests,
         分类统计: debugInfo.requestBreakdown,
       });
+      // 根据分析结果刷新可拉取端点状态
+      updateRefetchableStatus(networkAnalysis);
     } catch (error) {
       console.warn("网络分析失败:", error);
     }
@@ -609,6 +672,7 @@ import {
   analyzeNetworkRequests,
   networkAnalyzer,
 } from "../../shared/utils/networkAnalyzer";
+import { SuggestedQuestionsService } from "../../shared/services/suggestedQuestionsService";
 
 // 解析网页内容 - 使用优化后的提取器
 function parseWebContent(): string {
@@ -620,12 +684,32 @@ async function refetchGetEndpoints() {
   if (isRefetching.value) return;
   isRefetching.value = true;
 
+  // URL格式化辅助函数
+  const formatUrl = (url: string) => {
+    try {
+      const urlObj = new URL(url);
+      const domain = urlObj.hostname;
+      const path = urlObj.pathname + urlObj.search;
+      return {
+        domain: domain.length > 30 ? domain.substring(0, 30) + "..." : domain,
+        path: path.length > 50 ? path.substring(0, 50) + "..." : path,
+      };
+    } catch (error) {
+      // 如果URL解析失败，返回原始URL
+      return {
+        domain: url.length > 30 ? url.substring(0, 30) + "..." : url,
+        path: "",
+      };
+    }
+  };
+
   try {
     const analysis = analyzeNetworkRequests();
     const endpoints = Array.from(new Set(analysis.dataEndpoints)).slice(0, 5);
 
     if (endpoints.length === 0) {
       appActions.addMessage("未发现可重拉取的端点。", false);
+      updateRefetchableStatus(analysis);
       return;
     }
 
@@ -677,19 +761,87 @@ async function refetchGetEndpoints() {
 
     const success = results.filter((r) => r.ok).length;
     const fail = results.length - success;
-    const lines = results.map(
-      (r) => `- ${r.ok ? "✅" : "❌"} [${r.status}] ${r.url}\n  └ ${r.hint}`
-    );
+    const lines = results.map((r) => {
+      const urlInfo = formatUrl(r.url);
+      const statusIcon = r.ok ? "✅" : "❌";
+      const statusBadge = r.ok ? `\`${r.status}\`` : `\`${r.status}\``;
+
+      return (
+        `**${statusIcon} ${urlInfo.domain}**\n` +
+        `└ **路径**: \`${urlInfo.path}\`\n` +
+        `└ **状态**: ${statusBadge} | **信息**: ${r.hint}\n`
+      );
+    });
 
     appActions.addMessage(
-      `🔄 已尝试重拉取 ${
-        results.length
-      } 个GET端点（成功 ${success}，失败 ${fail}）\n\n${lines.join("\n")}`,
+      `🔄 **API端点重拉取结果**\n\n` +
+        `📊 共尝试 ${results.length} 个端点，成功 ${success} 个，失败 ${fail} 个\n\n` +
+        `${lines.join("\n")}`,
       false
     );
   } finally {
     isRefetching.value = false;
+    // 结束后刷新一次可拉取端点状态
+    updateRefetchableStatus();
   }
+}
+
+// 更新"是否有可重拉取端点"的状态
+function updateRefetchableStatus(latestAnalysis?: any) {
+  try {
+    const analysis = latestAnalysis ?? analyzeNetworkRequests();
+    const endpoints = Array.from(new Set(analysis.dataEndpoints));
+    hasRefetchableEndpoints.value = endpoints.length > 0;
+  } catch {
+    hasRefetchableEndpoints.value = false;
+  }
+}
+
+// 生成智能问题推荐
+async function generateSuggestedQuestions() {
+  console.log("检查推荐问题设置:", {
+    settings: appState.settings.value,
+    enableSuggestedQuestions: appState.settings.value?.enableSuggestedQuestions,
+  });
+
+  // 检查设置是否启用推荐问题
+  if (appState.settings.value?.enableSuggestedQuestions === false) {
+    console.log("推荐问题功能已禁用，跳过生成");
+    suggestedQuestions.value = [];
+    return;
+  }
+
+  try {
+    const questions =
+      await SuggestedQuestionsService.generateSuggestedQuestions(
+        parseWebContent,
+        pageContext.value
+      );
+    suggestedQuestions.value = questions;
+    console.log("推荐问题生成完成:", questions);
+  } catch (error) {
+    console.warn("生成建议问题失败:", error);
+    suggestedQuestions.value = [];
+  }
+}
+
+// 使用建议的问题
+function useSuggestedQuestion(question: string) {
+  userInput.value = question;
+  sendMessage();
+}
+
+// 清空消息
+async function clearMessages() {
+  if (appState.isProcessing.value) {
+    return;
+  }
+
+  appActions.clearMessages();
+  console.log("已清空所有消息");
+
+  // 清空后重新生成建议问题
+  await generateSuggestedQuestions();
 }
 
 // 处理对话框鼠标按下
@@ -895,8 +1047,8 @@ onUnmounted(() => {
   box-shadow: 0 8px 32px rgba(15, 52, 96, 0.4),
     0 0 0 1px rgba(212, 175, 55, 0.3) !important;
   border: 1px solid rgba(212, 175, 55, 0.4) !important;
-  min-width: 320px !important;
-  min-height: 400px !important;
+  min-width: 300px !important;
+  min-height: 500px !important;
   max-width: 90vw !important;
   max-height: 80vh !important;
   position: fixed !important;
@@ -975,6 +1127,11 @@ onUnmounted(() => {
 @media (max-width: 520px) {
   .dialog-toolbar-actions .btn-text {
     display: none;
+  }
+
+  .dialog-toolbar-actions .el-button {
+    padding: 8px;
+    min-width: auto;
   }
 }
 

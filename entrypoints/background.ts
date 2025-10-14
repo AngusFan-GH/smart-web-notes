@@ -46,6 +46,10 @@ export default defineBackground(() => {
           handleStopStreaming(sendResponse);
           break;
 
+        case "generateSuggestedQuestions":
+          handleGenerateSuggestedQuestions(message.data, sendResponse);
+          break;
+
         default:
           sendResponse({
             success: false,
@@ -287,5 +291,44 @@ export default defineBackground(() => {
       success: true,
       data: { message: "流式请求已停止" },
     });
+  }
+
+  // 生成建议问题
+  async function handleGenerateSuggestedQuestions(
+    data: any,
+    sendResponse: (response: ChromeResponse) => void
+  ) {
+    try {
+      const { prompt, max_tokens = 200, temperature = 0.7 } = data;
+
+      if (!prompt) {
+        sendResponse({
+          success: false,
+          error: "提示词不能为空",
+        });
+        return;
+      }
+
+      // 动态加载apiService
+      const { apiService } = await import("../src/shared/services/apiService");
+
+      // 调用API生成建议问题
+      const response = await apiService.generateSuggestedQuestions(
+        prompt,
+        max_tokens,
+        temperature
+      );
+
+      sendResponse({
+        success: true,
+        data: response,
+      });
+    } catch (error) {
+      console.error("生成建议问题失败:", error);
+      sendResponse({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 });

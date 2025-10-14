@@ -146,6 +146,17 @@
                 </el-text>
               </el-form-item>
 
+              <el-form-item label="智能推荐问题">
+                <el-switch
+                  v-model="settings.enableSuggestedQuestions"
+                  active-text="启用"
+                  inactive-text="禁用"
+                />
+                <el-text class="help-text" type="info" size="small">
+                  在对话框打开时自动生成基于页面内容的推荐问题
+                </el-text>
+              </el-form-item>
+
               <el-form-item v-if="settings.enableContext" label="保留对话轮数">
                 <el-input-number
                   v-model="settings.maxContextRounds"
@@ -159,16 +170,56 @@
               </el-form-item>
 
               <el-form-item label="系统提示词">
-                <el-input
-                  v-model="settings.systemPrompt"
-                  type="textarea"
-                  :rows="3"
-                  placeholder="你是一个帮助理解网页内容的AI助手。请使用Markdown格式回复。"
-                  resize="none"
-                  class="field"
-                />
+                <!-- 预设模板选择 -->
+                <div class="preset-templates">
+                  <div class="preset-buttons">
+                    <button
+                      type="button"
+                      class="preset-btn"
+                      :class="{ active: settings.systemPrompt === '' }"
+                      @click="applyPreset('default')"
+                    >
+                      智能模式
+                    </button>
+                    <button
+                      type="button"
+                      class="preset-btn"
+                      :class="{ active: isPresetActive('technical') }"
+                      @click="applyPreset('technical')"
+                    >
+                      技术专家
+                    </button>
+                    <button
+                      type="button"
+                      class="preset-btn"
+                      :class="{ active: isPresetActive('concise') }"
+                      @click="applyPreset('concise')"
+                    >
+                      简洁助手
+                    </button>
+                    <button
+                      type="button"
+                      class="preset-btn"
+                      :class="{ active: isPresetActive('friendly') }"
+                      @click="applyPreset('friendly')"
+                    >
+                      友好助手
+                    </button>
+                  </div>
+                </div>
+                <div class="system-prompt-container">
+                  <el-input
+                    v-model="settings.systemPrompt"
+                    type="textarea"
+                    :rows="4"
+                    placeholder="例如：你是一个专业的AI助手，专门帮助用户理解和分析网页内容。你的任务是准确理解网页内容的核心信息，根据用户问题提供精准、相关的回答，使用Markdown格式组织回答确保可读性。"
+                    resize="vertical"
+                    class="field"
+                  />
+                </div>
+
                 <el-text class="help-text" type="info" size="small">
-                  设置AI助手的角色和行为。留空则使用默认提示词。
+                  自定义AI助手的角色、行为风格和回复格式。留空则使用智能提示词系统。
                 </el-text>
               </el-form-item>
             </el-form>
@@ -279,6 +330,27 @@ const scrollbarRef = ref();
 // 测试状态：'none' | 'success' | 'error'
 const testStatus = ref("none");
 let statusTimer: NodeJS.Timeout | null = null;
+
+// 系统提示词预设模板
+const systemPromptPresets = {
+  default: "",
+  technical:
+    "你是一个技术专家，专门帮助解决编程和技术问题。请提供详细的代码示例、技术解释和最佳实践建议。使用Markdown格式组织回答，确保代码块有语法高亮。",
+  concise:
+    "你是一个简洁的AI助手。请用最少的文字回答问题，直接给出核心要点，避免冗余信息。使用简洁的Markdown格式。",
+  friendly:
+    "你是一个友好、幽默的AI助手。请用轻松愉快的语调回答问题，适当使用表情符号和比喻，让对话更有趣。使用Markdown格式组织回答。",
+};
+
+// 应用预设模板
+function applyPreset(presetKey: keyof typeof systemPromptPresets) {
+  settings.systemPrompt = systemPromptPresets[presetKey];
+}
+
+// 检查预设是否激活
+function isPresetActive(presetKey: keyof typeof systemPromptPresets) {
+  return settings.systemPrompt === systemPromptPresets[presetKey];
+}
 
 // 显示状态提示并自动消失
 function showStatus(message: string, type: string, duration = 3000) {
@@ -883,5 +955,72 @@ function resetSettings() {
     rgba(244, 67, 54, 0.4) 100%
   ) !important;
   border-color: rgba(244, 67, 54, 1) !important;
+}
+
+/* 系统提示词预设模板样式 */
+.system-prompt-container {
+  width: 100%;
+}
+
+.preset-templates {
+  width: 100%;
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+
+.preset-buttons {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  align-items: stretch;
+}
+
+@media (max-width: 600px) {
+  .preset-buttons {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.preset-btn {
+  font-size: 12px;
+  font-weight: 500;
+  height: 32px;
+  padding: 0 16px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  width: 100%;
+  cursor: pointer;
+  border: 1px solid #dcdfe6;
+  background: #fff;
+  color: #606266;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  font-family: inherit;
+  outline: none;
+}
+
+.preset-btn:hover {
+  color: #d4af37;
+  border-color: #d4af37;
+  background: rgba(212, 175, 55, 0.1);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(212, 175, 55, 0.2);
+}
+
+.preset-btn.active {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  border-color: #d4af37;
+  color: #d4af37;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(26, 26, 46, 0.3);
+}
+
+.preset-btn.active:hover {
+  background: linear-gradient(135deg, #16213e 0%, #1a1a2e 100%);
+  border-color: #ffc107;
+  color: #ffc107;
+  box-shadow: 0 6px 16px rgba(26, 26, 46, 0.4);
+  transform: translateY(-2px);
 }
 </style>
