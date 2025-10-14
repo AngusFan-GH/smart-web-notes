@@ -261,6 +261,24 @@ function handleStreamChunk(data: any) {
   }
 }
 
+// 处理流式错误
+function handleStreamError(data: any) {
+  console.error("流式处理错误:", data.error);
+
+  // 停止流式处理
+  stateManager.stopStreaming();
+
+  // 标记当前步骤为错误
+  errorStep("ai_conversation", `处理失败: ${data.error}`);
+
+  // 添加错误消息
+  appActions.addMessage(`❌ 处理失败: ${data.error}`, false);
+
+  // 重置状态
+  appActions.setStreaming(false);
+  appActions.setGenerating(false);
+}
+
 import { parseWebContent as extractContent } from "../shared/utils/contentExtractor";
 
 // 解析网页内容 - 使用优化后的提取器
