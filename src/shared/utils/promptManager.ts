@@ -20,6 +20,8 @@ export interface PromptContext {
   hasLinks: boolean;
   hasTables: boolean;
   hasCode: boolean;
+  hasNetworkData: boolean;
+  networkSummary?: string;
 }
 
 export interface PromptTemplate {
@@ -205,7 +207,8 @@ export class PromptManager {
   public generatePrompt(
     question: string,
     content: string,
-    url: string
+    url: string,
+    networkAnalysis?: any
   ): PromptTemplate {
     const contentType = this.analyzeContentType(content, url);
     const userIntent = this.analyzeUserIntent(question);
@@ -219,9 +222,16 @@ export class PromptManager {
       hasLinks: features.hasLinks || false,
       hasTables: features.hasTables || false,
       hasCode: features.hasCode || false,
+      hasNetworkData: !!networkAnalysis,
+      networkSummary: networkAnalysis?.summary,
     };
 
-    return this.buildPromptTemplate(context, question, content);
+    return this.buildPromptTemplate(
+      context,
+      question,
+      content,
+      networkAnalysis
+    );
   }
 
   /**
@@ -230,10 +240,16 @@ export class PromptManager {
   private buildPromptTemplate(
     context: PromptContext,
     question: string,
-    content: string
+    content: string,
+    networkAnalysis?: any
   ): PromptTemplate {
     const systemPrompt = this.buildSystemPrompt(context);
-    const userPrompt = this.buildUserPrompt(context, question, content);
+    const userPrompt = this.buildUserPrompt(
+      context,
+      question,
+      content,
+      networkAnalysis
+    );
 
     return {
       system: systemPrompt,
@@ -414,13 +430,17 @@ ${featureGuidance}
   private buildUserPrompt(
     context: PromptContext,
     question: string,
-    content: string
+    content: string,
+    networkAnalysis?: any
   ): string {
     const contentInfo = this.getContentInfo(context, content);
+    const networkInfo = this.getNetworkInfo(networkAnalysis);
 
     return `基于以下网页内容回答用户问题：
 
 ${contentInfo}
+
+${networkInfo}
 
 **用户问题：** ${question}
 
@@ -447,6 +467,39 @@ ${contentInfo}
 
     if (context.hasCode) {
       info += `\n\n*注：内容包含代码示例`;
+    }
+
+    return info;
+  }
+
+  /**
+   * 获取网络分析信息
+   */
+  private getNetworkInfo(networkAnalysis?: any): string {
+    if (!networkAnalysis) {
+      return "";
+    }
+
+    let info = `**网络请求分析：**\n${networkAnalysis.summary}`;
+
+    if (
+      networkAnalysis.dataEndpoints &&
+      networkAnalysis.dataEndpoints.length > 0
+    ) {
+      info += `\n\n**主要API端点：**\n${networkAnalysis.dataEndpoints
+        .slice(0, 5)
+        .map((endpoint: string) => `- ${endpoint}`)
+        .join("\n")}`;
+    }
+
+    if (networkAnalysis.keyData && networkAnalysis.keyData.length > 0) {
+      info += `\n\n**关键数据字段：**\n`;
+      networkAnalysis.keyData.slice(0, 3).forEach((data: any) => {
+        info += `- ${data.field}: ${JSON.stringify(data.value).substring(
+          0,
+          100
+        )}...\n`;
+      });
     }
 
     return info;
@@ -482,7 +535,8 @@ export const promptManager = PromptManager.getInstance();
 export function generateSmartPrompt(
   question: string,
   content: string,
-  url: string
+  url: string,
+  networkAnalysis?: any
 ): PromptTemplate {
-  return promptManager.generatePrompt(question, content, url);
+  return promptManager.generatePrompt(question, content, url, networkAnalysis);
 }

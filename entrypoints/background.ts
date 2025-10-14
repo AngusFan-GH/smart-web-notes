@@ -106,7 +106,13 @@ export default defineBackground(() => {
     sendResponse: (response: ChromeResponse) => void
   ) {
     try {
-      const { question, pageContent, conversationHistory, url } = data;
+      const {
+        question,
+        pageContent,
+        conversationHistory,
+        url,
+        networkAnalysis,
+      } = data;
 
       if (!question) {
         sendResponse({
@@ -211,7 +217,8 @@ export default defineBackground(() => {
           },
           currentStreamController,
           conversationHistory,
-          url
+          url,
+          networkAnalysis
         );
       } catch (error) {
         // 重置流式状态

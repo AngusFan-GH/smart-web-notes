@@ -1,4 +1,6 @@
 // Vue3 Content Script
+// 提前初始化网络监控，尽量早拦截后续请求
+import "../src/shared/utils/networkAnalyzer";
 export default defineContentScript({
   matches: ["<all_urls>"],
   main() {

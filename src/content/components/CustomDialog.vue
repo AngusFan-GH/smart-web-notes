@@ -20,6 +20,20 @@
 
     <!-- 对话框底部 -->
     <div class="dialog-footer">
+      <div class="dialog-toolbar-actions">
+        <el-tooltip content="重拉取 GET 端点" placement="top">
+          <el-button
+            type="warning"
+            size="small"
+            :loading="isRefetching"
+            :disabled="appState.isProcessing.value || isRefetching"
+            @click="refetchGetEndpoints"
+          >
+            <el-icon style="margin-right: 6px"><RefreshRight /></el-icon>
+            <span class="btn-text">重拉取 GET 端点</span>
+          </el-button>
+        </el-tooltip>
+      </div>
       <ChatInput
         ref="chatInputRef"
         v-model="userInput"
@@ -96,6 +110,7 @@ const emit = defineEmits<{
 // 响应式数据
 const userInput = ref("");
 const chatInputRef = ref();
+const isRefetching = ref(false);
 
 // 页面上下文
 const pageContext = computed(() => {
@@ -455,9 +470,33 @@ async function sendMessage() {
     const pageContent = (window as any).parseWebContent
       ? (window as any).parseWebContent()
       : "";
+
+    // 分析网络请求
+    let networkAnalysis = null;
+    try {
+      networkAnalysis = analyzeNetworkRequests();
+      console.log("网络分析结果:", networkAnalysis);
+
+      // 输出调试信息
+      const debugInfo = networkAnalyzer.getDebugInfo();
+      console.log("网络请求分析统计:", {
+        总请求数: debugInfo.totalRequests,
+        有意义请求: debugInfo.meaningfulRequests,
+        已分析请求: debugInfo.analyzedRequests,
+        忽略请求: debugInfo.ignoredRequests,
+        分类统计: debugInfo.requestBreakdown,
+      });
+    } catch (error) {
+      console.warn("网络分析失败:", error);
+    }
+
     completeStep(
       "prepare_content",
-      `已准备 ${pageContent.length} 个字符的内容，正在生成智能提示词...`
+      `已准备 ${pageContent.length} 个字符的内容${
+        networkAnalysis
+          ? `和 ${networkAnalysis.apiCalls.length} 个网络请求`
+          : ""
+      }，正在生成智能提示词...`
     );
 
     // 构建对话历史
@@ -478,6 +517,7 @@ async function sendMessage() {
         tabId: "current",
         conversationHistory: conversationHistory,
         url: pageContext.value.url,
+        networkAnalysis: networkAnalysis,
       },
     });
 
@@ -565,10 +605,91 @@ async function stopGeneration() {
 }
 
 import { parseWebContent as extractContent } from "../../shared/utils/contentExtractor";
+import {
+  analyzeNetworkRequests,
+  networkAnalyzer,
+} from "../../shared/utils/networkAnalyzer";
 
 // 解析网页内容 - 使用优化后的提取器
 function parseWebContent(): string {
   return extractContent();
+}
+
+// 一键重拉取 GET 端点（基于已分析端点和 Performance 端点候选）
+async function refetchGetEndpoints() {
+  if (isRefetching.value) return;
+  isRefetching.value = true;
+
+  try {
+    const analysis = analyzeNetworkRequests();
+    const endpoints = Array.from(new Set(analysis.dataEndpoints)).slice(0, 5);
+
+    if (endpoints.length === 0) {
+      appActions.addMessage("未发现可重拉取的端点。", false);
+      return;
+    }
+
+    const results: Array<{
+      url: string;
+      ok: boolean;
+      status: number;
+      hint: string;
+    }> = [];
+
+    for (const url of endpoints) {
+      try {
+        const res = await fetch(url, {
+          method: "GET",
+          credentials: "same-origin" as RequestCredentials,
+        });
+        let hint = "";
+        try {
+          const ct = res.headers.get("content-type") || "";
+          if (ct.includes("json")) {
+            const data = await res
+              .clone()
+              .json()
+              .catch(() => null);
+            if (data && typeof data === "object") {
+              const keys = Object.keys(data).slice(0, 5);
+              hint = keys.length ? `字段: ${keys.join(", ")}` : "JSON返回";
+            } else {
+              hint = "JSON返回";
+            }
+          } else if (ct.includes("text")) {
+            const text = await res
+              .clone()
+              .text()
+              .catch(() => "");
+            hint = text ? `文本(${Math.min(text.length, 120)}字)` : "文本返回";
+          } else {
+            hint = ct || "未知类型";
+          }
+        } catch {
+          hint = "解析失败";
+        }
+
+        results.push({ url, ok: res.ok, status: res.status, hint });
+      } catch (e) {
+        results.push({ url, ok: false, status: 0, hint: "请求失败" });
+      }
+    }
+
+    const success = results.filter((r) => r.ok).length;
+    const fail = results.length - success;
+    const lines = results.map(
+      (r) => `- ${r.ok ? "✅" : "❌"} [${r.status}] ${r.url}\n  └ ${r.hint}`
+    );
+
+    appActions.addMessage(
+      `🔄 已尝试重拉取 ${
+        results.length
+      } 个GET端点（成功 ${success}，失败 ${fail}）\n\n${lines.join("\n")}`,
+      false
+    );
+  } finally {
+    isRefetching.value = false;
+  }
 }
 
 // 处理对话框鼠标按下
@@ -838,6 +959,23 @@ onUnmounted(() => {
   flex-shrink: 0;
   min-height: 80px;
   backdrop-filter: blur(20px);
+}
+
+.dialog-toolbar-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px dashed rgba(212, 175, 55, 0.25);
+}
+
+/* 窄屏仅显示图标，隐藏文字 */
+@media (max-width: 520px) {
+  .dialog-toolbar-actions .btn-text {
+    display: none;
+  }
 }
 
 .dialog-footer::before {

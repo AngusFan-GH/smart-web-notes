@@ -11,6 +11,7 @@ export interface ContentExtractionConfig {
   extractLinkText: boolean;
   extractTableContent: boolean;
   enableSmartContent: boolean;
+  analyzeNetworkRequests: boolean;
 
   // 选择器配置
   mainContentSelectors: string[];
@@ -30,6 +31,7 @@ export const DEFAULT_CONTENT_EXTRACTION_CONFIG: ContentExtractionConfig = {
   extractLinkText: true,
   extractTableContent: true,
   enableSmartContent: true,
+  analyzeNetworkRequests: true,
 
   mainContentSelectors: [
     "main",

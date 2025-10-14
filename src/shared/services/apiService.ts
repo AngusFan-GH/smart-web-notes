@@ -53,7 +53,8 @@ export class ApiService {
       role: "user" | "assistant";
       content: string;
     }>,
-    url?: string
+    url?: string,
+    networkAnalysis?: any
   ): Promise<void> {
     try {
       // 验证配置
@@ -66,7 +67,8 @@ export class ApiService {
       const promptTemplate = generateSmartPrompt(
         question,
         pageContent,
-        url || (typeof window !== "undefined" ? window.location.href : "")
+        url || (typeof window !== "undefined" ? window.location.href : ""),
+        networkAnalysis
       );
 
       // 构建消息

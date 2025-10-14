@@ -5,6 +5,10 @@ import {
   type ContentExtractionConfig,
 } from "../constants/contentExtraction";
 import { cacheManager } from "./cacheManager";
+import {
+  analyzeNetworkRequests,
+  type NetworkAnalysisResult,
+} from "./networkAnalyzer";
 
 // 网页内容提取器 - 优化版本
 export interface ContentExtractionOptions {
@@ -26,6 +30,8 @@ export interface ContentExtractionOptions {
   excludeSelectors?: string[];
   // 是否使用网站特定配置
   useSiteSpecificConfig?: boolean;
+  // 是否分析网络请求
+  analyzeNetworkRequests?: boolean;
 }
 
 export interface ExtractedContent {
@@ -38,6 +44,7 @@ export interface ExtractedContent {
     links: Array<{ text: string; href: string }>;
     images: Array<{ alt: string; src: string }>;
   };
+  networkAnalysis?: NetworkAnalysisResult;
   metadata?: {
     url: string;
     title: string;
@@ -145,9 +152,20 @@ export class ContentExtractor {
       : undefined;
     const metadata = this.extractMetadata();
 
+    // 分析网络请求（如果启用）
+    let networkAnalysis: NetworkAnalysisResult | undefined;
+    if (options.analyzeNetworkRequests) {
+      try {
+        networkAnalysis = analyzeNetworkRequests();
+      } catch (error) {
+        console.warn("网络分析失败:", error);
+      }
+    }
+
     return {
       text: this.truncateText(text, options.maxLength),
       structure,
+      networkAnalysis,
       metadata: {
         ...metadata,
         wordCount: this.countWords(text),
