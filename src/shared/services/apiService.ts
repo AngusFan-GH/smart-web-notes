@@ -314,12 +314,26 @@ export class ApiService {
             try {
               const parsed = JSON.parse(data);
               const content = parsed.choices?.[0]?.delta?.content || "";
+              const reasoningContent =
+                parsed.choices?.[0]?.delta?.reasoning_content || "";
 
+              // 处理思考内容
+              if (reasoningContent) {
+                onChunk({
+                  type: "chunk",
+                  content: "",
+                  reasoningContent,
+                  fullResponse,
+                });
+              }
+
+              // 处理回答内容
               if (content) {
                 fullResponse += content;
                 onChunk({
                   type: "chunk",
                   content,
+                  reasoningContent: "",
                   fullResponse,
                 });
               }

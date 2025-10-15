@@ -5,6 +5,8 @@ export interface Message {
   isUser: boolean;
   timestamp: number;
   isGenerating?: boolean;
+  thinkingContent?: string; // 思考过程内容
+  isThinkingCollapsed?: boolean; // 思考内容是否折叠
 }
 
 export interface Settings {
@@ -36,6 +38,7 @@ export interface ApiRequest {
 export interface StreamChunk {
   type: "chunk" | "complete" | "error";
   content?: string;
+  reasoningContent?: string; // 思考过程内容
   fullResponse?: string;
   error?: string;
 }

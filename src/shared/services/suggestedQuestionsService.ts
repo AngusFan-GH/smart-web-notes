@@ -59,6 +59,87 @@ export class SuggestedQuestionsService {
   }
 
   /**
+   * 判断是否为真正的错误页面
+   */
+  private static isActualErrorPage(contentLower: string, url: string): boolean {
+    const urlLower = url.toLowerCase();
+
+    // 检查URL是否包含错误相关路径
+    const errorPaths = [
+      "/error",
+      "/404",
+      "/500",
+      "/403",
+      "/401",
+      "/not-found",
+      "/error-page",
+      "/exception",
+      "/bug-report",
+      "/issue",
+    ];
+
+    const hasErrorPath = errorPaths.some((path) => urlLower.includes(path));
+
+    // 检查内容是否包含明确的错误信息
+    const errorIndicators = [
+      "error occurred",
+      "an error has occurred",
+      "something went wrong",
+      "页面不存在",
+      "访问被拒绝",
+      "服务器错误",
+      "网络错误",
+      "error code",
+      "error message",
+      "exception details",
+      "stack trace",
+      "error log",
+      "debug information",
+    ];
+
+    const hasErrorContent = errorIndicators.some((indicator) =>
+      contentLower.includes(indicator)
+    );
+
+    // 检查是否包含错误状态码
+    const hasErrorCode = /\b(4\d{2}|5\d{2})\b/.test(contentLower);
+
+    // 检查是否包含错误相关的HTML类名或ID
+    const hasErrorClass =
+      contentLower.includes("error-page") ||
+      contentLower.includes("error-container") ||
+      contentLower.includes("not-found");
+
+    // 排除一些常见的非错误场景
+    const excludePatterns = [
+      "error handling",
+      "error management",
+      "error recovery",
+      "error prevention",
+      "error detection",
+      "error analysis",
+      "错误处理",
+      "错误管理",
+      "错误恢复",
+      "错误预防",
+      "error code",
+      "error message",
+      "error log", // 这些可能是文档内容
+    ];
+
+    const isExcluded = excludePatterns.some(
+      (pattern) =>
+        contentLower.includes(pattern) && !hasErrorPath && !hasErrorCode
+    );
+
+    // 只有满足多个条件才认为是错误页面
+    return (
+      (hasErrorPath || hasErrorContent || hasErrorCode || hasErrorClass) &&
+      !isExcluded
+    );
+  }
+
+  /**
    * 分析页面类型和特征
    */
   private static analyzePageType(
@@ -88,12 +169,7 @@ export class SuggestedQuestionsService {
         contentLower.includes("endpoint") ||
         contentLower.includes("rest") ||
         contentLower.includes("graphql"),
-      isError:
-        contentLower.includes("error") ||
-        contentLower.includes("错误") ||
-        contentLower.includes("exception") ||
-        contentLower.includes("bug") ||
-        contentLower.includes("issue"),
+      isError: this.isActualErrorPage(contentLower, context.url),
       isConfig:
         contentLower.includes("config") ||
         contentLower.includes("配置") ||
@@ -192,10 +268,9 @@ export class SuggestedQuestionsService {
     }
 
     if (analysis.isError) {
-      questions.push("这个错误的具体原因和解决方案是什么？");
-      questions.push("如何预防类似错误的发生？");
-      questions.push("错误排查的步骤和方法是什么？");
-      questions.push("这个错误对系统有什么影响？");
+      questions.push("如何快速解决这个问题？");
+      questions.push("这个问题的常见解决方案有哪些？");
+      questions.push("如何避免再次遇到类似问题？");
     }
 
     if (analysis.isConfig) {
@@ -445,6 +520,8 @@ export class SuggestedQuestionsService {
 3. 问题要能帮助用户快速理解或使用网页内容
 4. 语言要自然，符合中文表达习惯
 5. 每个问题控制在20字以内
+6. 不要生成关于控制台错误、技术错误、调试等用户看不到的问题
+7. 专注于用户可见的内容和功能
 
 请直接返回3个问题，每行一个，不要编号，不要其他解释：
 
@@ -498,8 +575,48 @@ export class SuggestedQuestionsService {
       .filter((line) => line.length > 0)
       .filter((line) => !line.match(/^\d+[\.\)]\s*/)) // 移除编号
       .filter((line) => line.includes("？") || line.includes("?")) // 只保留问题
+      .filter((line) => this.isValidQuestion(line)) // 过滤不合适的问题
       .slice(0, 3); // 最多3个
 
     return lines;
+  }
+
+  /**
+   * 检查问题是否合适
+   */
+  private static isValidQuestion(question: string): boolean {
+    const questionLower = question.toLowerCase();
+
+    // 过滤掉关于控制台错误、技术错误等用户看不到的问题
+    const invalidPatterns = [
+      "控制台错误",
+      "console error",
+      "控制台",
+      "console",
+      "技术错误",
+      "调试",
+      "debug",
+      "错误日志",
+      "error log",
+      "异常堆栈",
+      "stack trace",
+      "错误代码",
+      "error code",
+      "网络请求错误",
+      "network error",
+      "api错误",
+      "api error",
+      "服务器错误",
+      "server error",
+      "内部错误",
+      "internal error",
+    ];
+
+    // 如果问题包含这些模式，则过滤掉
+    const hasInvalidPattern = invalidPatterns.some((pattern) =>
+      questionLower.includes(pattern)
+    );
+
+    return !hasInvalidPattern;
   }
 }

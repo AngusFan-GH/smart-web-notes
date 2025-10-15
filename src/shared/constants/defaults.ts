@@ -2,9 +2,9 @@ import type { Settings } from "../types";
 
 export const DEFAULT_SETTINGS: Settings = {
   apiType: "custom",
-  custom_apiKey: "sk-d0297f69db424456942275de346f5375",
-  custom_apiBase: "https://api.deepseek.com/chat/completions",
-  custom_model: "deepseek-chat",
+  custom_apiKey: "sk-luulfdrjkupdjynjwjrakhugpeizmlhfhomywdiiauspncpc",
+  custom_apiBase: "https://api.siliconflow.cn/v1/chat/completions",
+  custom_model: "deepseek-ai/DeepSeek-R1",
   systemPrompt: "",
   enableContext: true,
   maxContextRounds: 5,

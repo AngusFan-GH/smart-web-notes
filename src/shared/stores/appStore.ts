@@ -91,6 +91,33 @@ export const appActions = {
     }
   },
 
+  updateLastMessageThinking(reasoningContent: string) {
+    if (state.messages.length > 0) {
+      const lastMessage = state.messages[state.messages.length - 1];
+
+      if (!lastMessage.isUser) {
+        // 更新思考内容
+        if (!lastMessage.thinkingContent) {
+          lastMessage.thinkingContent = "";
+        }
+        lastMessage.thinkingContent =
+          lastMessage.thinkingContent + reasoningContent;
+
+        // 默认展开思考内容
+        if (lastMessage.isThinkingCollapsed === undefined) {
+          lastMessage.isThinkingCollapsed = false;
+        }
+      }
+    }
+  },
+
+  toggleThinkingCollapse(messageId: string) {
+    const message = state.messages.find((m) => m.id === messageId);
+    if (message && !message.isUser) {
+      message.isThinkingCollapsed = !message.isThinkingCollapsed;
+    }
+  },
+
   clearMessages() {
     state.messages = [];
   },

@@ -211,7 +211,7 @@ function handleStopStreaming() {
 
 // 处理流式数据块
 function handleStreamChunk(data: any) {
-  if (data.type === "chunk" && data.content) {
+  if (data.type === "chunk") {
     // 开始流式处理
     stateManager.startStreaming();
 
@@ -226,8 +226,15 @@ function handleStreamChunk(data: any) {
       appActions.addMessage("", false);
     }
 
-    // 直接追加增量内容（类似 newme-ds 的处理方式）
-    appActions.updateLastMessage(data.content);
+    // 处理思考内容
+    if (data.reasoningContent) {
+      appActions.updateLastMessageThinking(data.reasoningContent);
+    }
+
+    // 处理回答内容
+    if (data.content) {
+      appActions.updateLastMessage(data.content);
+    }
   } else if (data.type === "done") {
     // 检测到流式完成信号
 
@@ -239,6 +246,18 @@ function handleStreamChunk(data: any) {
 
     // 完成AI对话处理步骤
     completeStep("ai_conversation", "AI对话处理完成");
+
+    // 自动折叠思考内容（如果存在）
+    if (appState.messages.value.length > 0) {
+      const lastMessage =
+        appState.messages.value[appState.messages.value.length - 1];
+      if (!lastMessage.isUser && lastMessage.thinkingContent) {
+        // 延迟一点时间再折叠，让用户看到思考过程
+        setTimeout(() => {
+          appActions.toggleThinkingCollapse(lastMessage.id);
+        }, 2000); // 2秒后自动折叠
+      }
+    }
 
     // 直接设置状态确保立即生效
     appActions.setStreaming(false);

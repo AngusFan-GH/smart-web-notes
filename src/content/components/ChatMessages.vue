@@ -22,6 +22,34 @@
           ]"
         >
           <div class="message-content">
+            <!-- 思考内容 -->
+            <div
+              v-if="!message.isUser && message.thinkingContent"
+              class="thinking-section"
+            >
+              <div class="thinking-header" @click="toggleThinking(message.id)">
+                <span class="thinking-title">
+                  <i
+                    :class="
+                      message.isThinkingCollapsed
+                        ? 'el-icon-arrow-right'
+                        : 'el-icon-arrow-down'
+                    "
+                  ></i>
+                  思考过程
+                </span>
+                <span class="thinking-toggle">
+                  {{ message.isThinkingCollapsed ? "展开" : "折叠" }}
+                </span>
+              </div>
+              <div
+                v-show="!message.isThinkingCollapsed"
+                class="thinking-content"
+                v-html="getRenderedThinkingContent(message.id)"
+              ></div>
+            </div>
+
+            <!-- 回答内容 -->
             <div v-html="getRenderedContent(message.id)"></div>
           </div>
         </div>
@@ -58,6 +86,7 @@ import { ref, watch, onMounted, nextTick } from "vue";
 import { ElButton, ElScrollbar } from "element-plus";
 import { ArrowDown } from "@element-plus/icons-vue";
 import { renderMarkdown } from "../../shared/utils/markdown";
+import { appActions } from "../../shared/stores/appStore";
 
 interface Message {
   id: string;
@@ -104,6 +133,37 @@ const getRenderedContent = (messageId: string): string => {
   return renderedContentCache.value.get(messageId) || message.content;
 };
 
+// 获取思考内容渲染（同步）
+const getRenderedThinkingContent = (messageId: string): string => {
+  const message = props.messages.find((m) => m.id === messageId);
+  if (!message || !message.thinkingContent) return "";
+
+  const cacheKey = `${messageId}-thinking`;
+
+  // 如果没有缓存，同步渲染
+  if (!renderedContentCache.value.has(cacheKey)) {
+    // 对于流式更新的思考内容，立即渲染
+    renderMarkdown(message.thinkingContent)
+      .then((result) => {
+        renderedContentCache.value.set(cacheKey, result);
+      })
+      .catch(() => {
+        const fallback = message.thinkingContent.replace(/\n/g, "<br>");
+        renderedContentCache.value.set(cacheKey, fallback);
+      });
+
+    // 返回临时内容
+    return message.thinkingContent.replace(/\n/g, "<br>");
+  }
+
+  return renderedContentCache.value.get(cacheKey) || message.thinkingContent;
+};
+
+// 切换思考内容折叠状态
+const toggleThinking = (messageId: string) => {
+  appActions.toggleThinkingCollapse(messageId);
+};
+
 // 滚动到底部（参考 newme-ds 的 handleDown 实现）
 const handleDown = () => {
   setTimeout(() => {
@@ -147,6 +207,11 @@ watch(
       if (isStreaming && lastMessage && !lastMessage.isUser) {
         renderedContentCache.value.delete(lastMessage.id);
 
+        // 如果有思考内容，也清除其缓存
+        if (lastMessage.thinkingContent) {
+          renderedContentCache.value.delete(`${lastMessage.id}-thinking`);
+        }
+
         await nextTick();
 
         // 渲染最新内容
@@ -158,6 +223,27 @@ watch(
             const fallback = lastMessage.content.replace(/\n/g, "<br>");
             renderedContentCache.value.set(lastMessage.id, fallback);
           });
+
+        // 渲染思考内容
+        if (lastMessage.thinkingContent) {
+          renderMarkdown(lastMessage.thinkingContent)
+            .then((result) => {
+              renderedContentCache.value.set(
+                `${lastMessage.id}-thinking`,
+                result
+              );
+            })
+            .catch(() => {
+              const fallback = lastMessage.thinkingContent.replace(
+                /\n/g,
+                "<br>"
+              );
+              renderedContentCache.value.set(
+                `${lastMessage.id}-thinking`,
+                fallback
+              );
+            });
+        }
 
         // 流式更新时自动滚动（参考 newme-ds）
         handleDown();
@@ -472,6 +558,148 @@ onMounted(async () => {
   background: rgba(0, 0, 0, 0.02);
   border-radius: 8px;
   overflow-x: auto;
+}
+
+/* 思考内容样式 */
+.thinking-section {
+  margin-bottom: 8px;
+}
+
+.thinking-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.2s ease;
+  margin-bottom: 4px;
+}
+
+.thinking-header:hover {
+  opacity: 0.8;
+}
+
+.thinking-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #9ca3af;
+  letter-spacing: 0.3px;
+}
+
+.thinking-title i {
+  font-size: 11px;
+  transition: transform 0.2s ease;
+}
+
+.thinking-toggle {
+  font-size: 11px;
+  color: #9ca3af;
+  font-weight: 400;
+  transition: color 0.2s ease;
+}
+
+.thinking-header:hover .thinking-toggle {
+  color: #6b7280;
+}
+
+.thinking-content {
+  padding: 0;
+  margin-bottom: 12px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #9ca3af;
+  word-wrap: break-word;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+/* 思考内容中的元素样式 - 使用灰色调 */
+.thinking-content * {
+  color: #9ca3af !important;
+}
+
+.thinking-content strong,
+.thinking-content b {
+  color: #6b7280 !important;
+  font-weight: 600;
+}
+
+.thinking-content pre {
+  background: rgba(156, 163, 175, 0.1) !important;
+  border: 1px solid rgba(156, 163, 175, 0.2) !important;
+  border-radius: 4px !important;
+  padding: 8px !important;
+  margin: 8px 0 !important;
+  font-size: 12px !important;
+  overflow-x: auto !important;
+}
+
+.thinking-content code {
+  background: rgba(156, 163, 175, 0.1) !important;
+  color: #6b7280 !important;
+  padding: 2px 4px !important;
+  border-radius: 3px !important;
+  font-size: 12px !important;
+}
+
+.thinking-content ul,
+.thinking-content ol {
+  margin: 8px 0 !important;
+  padding-left: 20px !important;
+}
+
+.thinking-content li {
+  margin: 4px 0 !important;
+  line-height: 1.5 !important;
+}
+
+.thinking-content blockquote {
+  border-left: 2px solid rgba(156, 163, 175, 0.4) !important;
+  padding-left: 12px !important;
+  margin: 8px 0 !important;
+  font-style: italic !important;
+}
+
+/* 响应式设计 - 思考内容 */
+@media (max-width: 768px) {
+  .thinking-header {
+    padding: 3px 0;
+  }
+
+  .thinking-title {
+    font-size: 11px;
+  }
+
+  .thinking-toggle {
+    font-size: 10px;
+  }
+
+  .thinking-content {
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 480px) {
+  .thinking-header {
+    padding: 2px 0;
+  }
+
+  .thinking-title {
+    font-size: 10px;
+    gap: 4px;
+  }
+
+  .thinking-toggle {
+    font-size: 9px;
+  }
+
+  .thinking-content {
+    font-size: 12px;
+  }
 }
 
 .math-inline {
