@@ -51,7 +51,7 @@
           <el-button
             type="danger"
             size="small"
-            :disabled="appState.isProcessing.value"
+            :disabled="appState.isProcessing.value || isRefetching"
             @click="clearMessages"
           >
             <el-icon><Delete /></el-icon>
@@ -59,27 +59,27 @@
           </el-button>
         </el-tooltip>
         <el-tooltip
-          v-if="hasRefetchableEndpoints"
-          content="拉取 API 端点"
+          v-if="hasDetectedDataSources"
+          content="获取页面数据"
           placement="top"
         >
           <el-button
-            type="warning"
+            type="primary"
             size="small"
             :loading="isRefetching"
             :disabled="appState.isProcessing.value || isRefetching"
-            @click="refetchGetEndpoints"
+            @click="exploreDataSources"
           >
-            <el-icon><RefreshRight /></el-icon>
-            <span class="btn-text">拉取</span>
+            <el-icon><DataAnalysis /></el-icon>
+            <span class="btn-text">获取数据</span>
           </el-button>
         </el-tooltip>
       </div>
       <ChatInput
         ref="chatInputRef"
         v-model="userInput"
-        :disabled="appState.isProcessing.value"
-        :is-loading="appState.isProcessing.value"
+        :disabled="appState.isProcessing.value || isRefetching"
+        :is-loading="appState.isProcessing.value || isRefetching"
         @submit="sendMessage"
         @keydown="handleKeydown"
         @stop="stopGeneration"
@@ -133,7 +133,7 @@ import ChatMessages from "./ChatMessages.vue";
 import ChatInput from "./ChatInput.vue";
 import ProcessingSteps from "./ProcessingSteps.vue";
 import SuggestedQuestions from "./SuggestedQuestions.vue";
-import { Delete, RefreshRight } from "@element-plus/icons-vue";
+import { Delete, RefreshRight, DataAnalysis } from "@element-plus/icons-vue";
 
 // 声明chrome类型
 declare const chrome: any;
@@ -155,7 +155,7 @@ const emit = defineEmits<{
 const userInput = ref("");
 const chatInputRef = ref();
 const isRefetching = ref(false);
-const hasRefetchableEndpoints = ref(false);
+const hasDetectedDataSources = ref(false);
 
 // 智能问题推荐相关
 const suggestedQuestions = ref<string[]>([]);
@@ -469,6 +469,11 @@ onMounted(async () => {
   // 初始化一次可拉取端点状态
   updateRefetchableStatus();
 
+  // 页面加载时自动检测数据源
+  setTimeout(() => {
+    updateRefetchableStatus();
+  }, 1000);
+
   // 加载推荐问题
   loadSuggestedQuestions();
 
@@ -612,7 +617,7 @@ function close() {
 // 发送消息
 async function sendMessage() {
   const message = userInput.value.trim();
-  if (!message || appState.isProcessing.value) return;
+  if (!message || appState.isProcessing.value || isRefetching.value) return;
 
   console.log("CustomDialog开始发送消息:", message);
 
@@ -791,39 +796,62 @@ function parseWebContent(): string {
   return extractContent();
 }
 
-// 一键重拉取 GET 端点（基于已分析端点和 Performance 端点候选）
-async function refetchGetEndpoints() {
+// URL格式化辅助函数
+function formatUrl(url: string) {
+  try {
+    const urlObj = new URL(url);
+    const domain = urlObj.hostname;
+    const path = urlObj.pathname + urlObj.search;
+    return {
+      domain: domain.length > 30 ? domain.substring(0, 30) + "..." : domain,
+      path: path.length > 50 ? path.substring(0, 50) + "..." : path,
+    };
+  } catch (error) {
+    // 如果URL解析失败，返回原始URL
+    return {
+      domain: url.length > 30 ? url.substring(0, 30) + "..." : url,
+      path: "",
+    };
+  }
+}
+
+// 数据探索功能 - 获取页面数据源
+async function exploreDataSources() {
+  console.log("开始数据探索，当前状态:", { isRefetching: isRefetching.value });
   if (isRefetching.value) return;
   isRefetching.value = true;
-
-  // URL格式化辅助函数
-  const formatUrl = (url: string) => {
-    try {
-      const urlObj = new URL(url);
-      const domain = urlObj.hostname;
-      const path = urlObj.pathname + urlObj.search;
-      return {
-        domain: domain.length > 30 ? domain.substring(0, 30) + "..." : domain,
-        path: path.length > 50 ? path.substring(0, 50) + "..." : path,
-      };
-    } catch (error) {
-      // 如果URL解析失败，返回原始URL
-      return {
-        domain: url.length > 30 ? url.substring(0, 30) + "..." : url,
-        path: "",
-      };
-    }
-  };
+  console.log("设置加载状态为true");
 
   try {
     const analysis = analyzeNetworkRequests();
     const endpoints = Array.from(new Set(analysis.dataEndpoints)).slice(0, 5);
 
     if (endpoints.length === 0) {
-      appActions.addMessage("未发现可重拉取的端点。", false);
+      appActions.addMessage(
+        "🔍 **数据探索结果**\n\n未发现可获取的数据源。页面可能没有API接口或数据接口。",
+        false
+      );
       updateRefetchableStatus(analysis);
+      isRefetching.value = false; // 重置按钮状态
       return;
     }
+
+    // 显示数据源预览和获取进度
+    const previewLines = endpoints.map((url, index) => {
+      const urlInfo = formatUrl(url);
+      return `**${index + 1}. ${urlInfo.domain}**\n   📍 路径: \`${
+        urlInfo.path
+      }\``;
+    });
+
+    // 先显示预览消息
+    appActions.addMessage(
+      `🔍 **数据探索**\n\n` +
+        `📊 检测到 ${endpoints.length} 个数据源，正在获取最新数据...\n\n` +
+        `**数据源列表：**\n${previewLines.join("\n")}\n\n` +
+        `⏳ 正在获取数据，请稍候...`,
+      false
+    );
 
     const results: Array<{
       url: string;
@@ -848,21 +876,27 @@ async function refetchGetEndpoints() {
               .catch(() => null);
             if (data && typeof data === "object") {
               const keys = Object.keys(data).slice(0, 5);
-              hint = keys.length ? `字段: ${keys.join(", ")}` : "JSON返回";
+              hint = keys.length ? `包含字段: ${keys.join(", ")}` : "JSON数据";
             } else {
-              hint = "JSON返回";
+              hint = "JSON数据";
             }
           } else if (ct.includes("text")) {
             const text = await res
               .clone()
               .text()
               .catch(() => "");
-            hint = text ? `文本(${Math.min(text.length, 120)}字)` : "文本返回";
+            hint = text
+              ? `文本内容 (${Math.min(text.length, 120)}字符)`
+              : "文本数据";
+          } else if (ct.includes("xml")) {
+            hint = "XML数据";
+          } else if (ct.includes("html")) {
+            hint = "HTML页面";
           } else {
-            hint = ct || "未知类型";
+            hint = ct ? `数据格式: ${ct.split(";")[0]}` : "未知格式";
           }
         } catch {
-          hint = "解析失败";
+          hint = "数据解析失败";
         }
 
         results.push({ url, ok: res.ok, status: res.status, hint });
@@ -873,24 +907,30 @@ async function refetchGetEndpoints() {
 
     const success = results.filter((r) => r.ok).length;
     const fail = results.length - success;
-    const lines = results.map((r) => {
+    const lines = results.map((r, index) => {
       const urlInfo = formatUrl(r.url);
       const statusIcon = r.ok ? "✅" : "❌";
-      const statusBadge = r.ok ? `\`${r.status}\`` : `\`${r.status}\``;
+      const statusText = r.ok ? "成功" : "失败";
+      const statusEmoji = r.ok ? "🟢" : "🔴";
 
       return (
-        `**${statusIcon} ${urlInfo.domain}**\n` +
-        `└ **路径**: \`${urlInfo.path}\`\n` +
-        `└ **状态**: ${statusBadge} | **信息**: ${r.hint}\n`
+        `**${index + 1}. ${statusIcon} ${urlInfo.domain}**\n` +
+        `   📍 **路径**: \`${urlInfo.path}\`\n` +
+        `   📊 **状态**: ${statusEmoji} ${statusText} (${r.status})\n` +
+        `   📝 **数据**: ${r.hint}\n`
       );
     });
 
-    appActions.addMessage(
-      `🔄 **API端点重拉取结果**\n\n` +
-        `📊 共尝试 ${results.length} 个端点，成功 ${success} 个，失败 ${fail} 个\n\n` +
-        `${lines.join("\n")}`,
-      false
-    );
+    // 添加最终结果消息
+    const resultMessage =
+      `🔍 **数据探索结果**\n\n` +
+      `📊 发现 ${results.length} 个数据源，成功获取 ${success} 个，失败 ${fail} 个\n\n` +
+      `**数据详情：**\n${lines.join("\n")}\n\n` +
+      `💡 *提示：您可以基于这些数据向AI提问，获取更深入的分析和见解。*`;
+
+    console.log("准备添加结果消息:", resultMessage);
+    appActions.addMessage(resultMessage, false);
+    console.log("结果消息已添加");
   } finally {
     isRefetching.value = false;
     // 结束后刷新一次可拉取端点状态
@@ -898,14 +938,14 @@ async function refetchGetEndpoints() {
   }
 }
 
-// 更新"是否有可重拉取端点"的状态
+// 更新"是否有可获取数据源"的状态
 function updateRefetchableStatus(latestAnalysis?: any) {
   try {
     const analysis = latestAnalysis ?? analyzeNetworkRequests();
     const endpoints = Array.from(new Set(analysis.dataEndpoints));
-    hasRefetchableEndpoints.value = endpoints.length > 0;
+    hasDetectedDataSources.value = endpoints.length > 0;
   } catch {
-    hasRefetchableEndpoints.value = false;
+    hasDetectedDataSources.value = false;
   }
 }
 
@@ -919,7 +959,7 @@ function useSuggestedQuestion(question: string) {
 
 // 清空消息
 async function clearMessages() {
-  if (appState.isProcessing.value) {
+  if (appState.isProcessing.value || isRefetching.value) {
     return;
   }
 
