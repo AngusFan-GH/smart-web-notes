@@ -17,6 +17,21 @@
         :is-streaming="appState.isStreaming.value"
       />
 
+      <!-- 推荐问题加载状态 -->
+      <div
+        v-if="
+          isGeneratingSuggestedQuestions && appState.messages.value.length === 0
+        "
+        class="suggested-questions-loading"
+      >
+        <div class="loading-dots">
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+        </div>
+        <span class="loading-text">生成推荐问题中</span>
+      </div>
+
       <!-- 智能问题推荐 -->
       <SuggestedQuestions
         :visible="showSuggestedQuestions"
@@ -112,6 +127,7 @@ import {
   errorStep,
 } from "../../shared/utils/userFeedback";
 import { stateManager } from "../../shared/utils/stateManager";
+import { SuggestedQuestionsService } from "../../shared/services/suggestedQuestionsService";
 import DialogHeader from "./DialogHeader.vue";
 import ChatMessages from "./ChatMessages.vue";
 import ChatInput from "./ChatInput.vue";
@@ -143,6 +159,7 @@ const hasRefetchableEndpoints = ref(false);
 
 // 智能问题推荐相关
 const suggestedQuestions = ref<string[]>([]);
+const isGeneratingSuggestedQuestions = ref(false);
 const showSuggestedQuestions = computed(() => {
   return (
     appState.messages.value.length === 0 &&
@@ -150,6 +167,93 @@ const showSuggestedQuestions = computed(() => {
     appState.settings.value?.enableSuggestedQuestions !== false
   );
 });
+
+// 从全局状态获取推荐问题
+function loadSuggestedQuestions() {
+  const globalQuestions = (window as any).suggestedQuestions;
+  if (globalQuestions && Array.isArray(globalQuestions)) {
+    suggestedQuestions.value = globalQuestions;
+    console.log("从全局状态加载推荐问题:", globalQuestions);
+  }
+}
+
+// 处理推荐问题更新事件
+function handleSuggestedQuestionsUpdated(event: any) {
+  const { questions } = event.detail;
+  if (questions && Array.isArray(questions)) {
+    suggestedQuestions.value = questions;
+    console.log("收到推荐问题更新事件:", questions);
+  }
+}
+
+// 生成推荐问题（如果需要）
+async function generateSuggestedQuestionsIfNeeded() {
+  console.log("🔍 CustomDialog generateSuggestedQuestionsIfNeeded 被调用", {
+    enableSuggestedQuestions: appState.settings.value?.enableSuggestedQuestions,
+    showFloatingBall: appState.showFloatingBall.value,
+    messagesLength: appState.messages.value.length,
+  });
+
+  // 检查设置是否启用推荐问题
+  if (appState.settings.value?.enableSuggestedQuestions === false) {
+    console.log("推荐问题功能已禁用，跳过生成");
+    return;
+  }
+
+  // 检查悬浮球是否显示
+  if (!appState.showFloatingBall.value) {
+    console.log("悬浮球已隐藏，跳过推荐问题生成");
+    return;
+  }
+
+  // 检查是否有消息
+  if (appState.messages.value.length > 0) {
+    console.log("已有消息，跳过推荐问题生成");
+    return;
+  }
+
+  try {
+    console.log("开始生成推荐问题...");
+
+    // 设置加载状态
+    isGeneratingSuggestedQuestions.value = true;
+
+    // 获取页面内容解析函数
+    const parseWebContent = (window as any).parseWebContent;
+    if (!parseWebContent) {
+      console.warn("页面内容解析函数不可用");
+      return;
+    }
+
+    // 获取页面上下文
+    const pageContext = {
+      url: typeof window !== "undefined" ? window.location.href : "",
+      title: typeof document !== "undefined" ? document.title : "",
+    };
+
+    // 生成推荐问题
+    const questions =
+      await SuggestedQuestionsService.generateSuggestedQuestions(
+        parseWebContent,
+        pageContext
+      );
+
+    // 将问题存储到全局状态中
+    (window as any).suggestedQuestions = questions;
+
+    // 更新本地状态
+    suggestedQuestions.value = questions;
+
+    console.log("推荐问题生成完成:", questions);
+  } catch (error) {
+    console.warn("生成推荐问题失败:", error);
+    // 生成失败时保持推荐问题为空
+    suggestedQuestions.value = [];
+  } finally {
+    // 清除加载状态
+    isGeneratingSuggestedQuestions.value = false;
+  }
+}
 
 // 页面上下文
 const pageContext = computed(() => {
@@ -356,26 +460,35 @@ onMounted(async () => {
   // 添加背景点击监听（用于自动隐藏对话框）
   document.addEventListener("mousedown", handleBackgroundClick);
 
+  // 监听推荐问题更新事件
+  window.addEventListener(
+    "suggestedQuestionsUpdated",
+    handleSuggestedQuestionsUpdated
+  );
+
   // 初始化一次可拉取端点状态
   updateRefetchableStatus();
 
-  // 生成建议问题（等待设置加载完成）
-  setTimeout(async () => {
-    await generateSuggestedQuestions();
-  }, 100);
+  // 加载推荐问题
+  loadSuggestedQuestions();
 
-  // 监听设置变化，重新生成推荐问题
-  watch(
-    () => appState.settings.value?.enableSuggestedQuestions,
-    async (newValue) => {
-      if (newValue === false) {
-        // 如果禁用了推荐问题，清空现有问题
-        suggestedQuestions.value = [];
-      } else if (newValue === true && appState.messages.value.length === 0) {
-        // 如果启用了推荐问题且没有消息，重新生成
-        await generateSuggestedQuestions();
-      }
-    }
+  // 如果全局状态中没有推荐问题，则生成新的
+  if (
+    !(window as any).suggestedQuestions ||
+    (window as any).suggestedQuestions.length === 0
+  ) {
+    generateSuggestedQuestionsIfNeeded();
+  }
+});
+
+// 清理
+onUnmounted(() => {
+  // 清理事件监听器
+  window.removeEventListener("resize", handleWindowResizeDebounced);
+  document.removeEventListener("mousedown", handleBackgroundClick);
+  window.removeEventListener(
+    "suggestedQuestionsUpdated",
+    handleSuggestedQuestionsUpdated
   );
 });
 
@@ -672,7 +785,6 @@ import {
   analyzeNetworkRequests,
   networkAnalyzer,
 } from "../../shared/utils/networkAnalyzer";
-import { SuggestedQuestionsService } from "../../shared/services/suggestedQuestionsService";
 
 // 解析网页内容 - 使用优化后的提取器
 function parseWebContent(): string {
@@ -797,33 +909,7 @@ function updateRefetchableStatus(latestAnalysis?: any) {
   }
 }
 
-// 生成智能问题推荐
-async function generateSuggestedQuestions() {
-  console.log("检查推荐问题设置:", {
-    settings: appState.settings.value,
-    enableSuggestedQuestions: appState.settings.value?.enableSuggestedQuestions,
-  });
-
-  // 检查设置是否启用推荐问题
-  if (appState.settings.value?.enableSuggestedQuestions === false) {
-    console.log("推荐问题功能已禁用，跳过生成");
-    suggestedQuestions.value = [];
-    return;
-  }
-
-  try {
-    const questions =
-      await SuggestedQuestionsService.generateSuggestedQuestions(
-        parseWebContent,
-        pageContext.value
-      );
-    suggestedQuestions.value = questions;
-    console.log("推荐问题生成完成:", questions);
-  } catch (error) {
-    console.warn("生成建议问题失败:", error);
-    suggestedQuestions.value = [];
-  }
-}
+// 注意：推荐问题生成现在由App.vue统一管理
 
 // 使用建议的问题
 function useSuggestedQuestion(question: string) {
@@ -840,8 +926,15 @@ async function clearMessages() {
   appActions.clearMessages();
   console.log("已清空所有消息");
 
-  // 清空后重新生成建议问题
-  await generateSuggestedQuestions();
+  // 立即清空推荐问题，避免显示旧问题
+  suggestedQuestions.value = [];
+  (window as any).suggestedQuestions = [];
+  console.log("已清空推荐问题");
+
+  // 清空后重新生成推荐问题
+  setTimeout(async () => {
+    await generateSuggestedQuestionsIfNeeded();
+  }, 100);
 }
 
 // 处理对话框鼠标按下
@@ -1370,6 +1463,89 @@ onUnmounted(() => {
   .dialog-footer {
     padding: 8px 20px;
     min-height: 50px;
+  }
+}
+
+/* 推荐问题加载状态样式 */
+.suggested-questions-loading {
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  z-index: 10;
+  animation: fadeInUp 0.3s ease-out;
+}
+
+.loading-dots {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #409eff, #67c23a);
+  animation: dotPulse 1.4s ease-in-out infinite both;
+}
+
+.dot:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.dot:nth-child(2) {
+  animation-delay: -0.16s;
+}
+
+.dot:nth-child(3) {
+  animation-delay: 0s;
+}
+
+.loading-text {
+  color: #909399;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0.5px;
+  opacity: 0.8;
+  animation: textFade 2s ease-in-out infinite;
+}
+
+/* 动画效果 */
+@keyframes dotPulse {
+  0%,
+  80%,
+  100% {
+    transform: scale(0.8);
+    opacity: 0.5;
+  }
+  40% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateX(-10px) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) translateY(0);
+  }
+}
+
+@keyframes textFade {
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
   }
 }
 

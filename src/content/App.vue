@@ -12,7 +12,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, nextTick } from "vue";
+import { onMounted, onUnmounted, nextTick, watch } from "vue";
 import FloatingBall from "./components/FloatingBall.vue";
 import CustomDialog from "./components/CustomDialog.vue";
 import { appState, appActions } from "../shared/stores/appStore";
@@ -44,6 +44,8 @@ async function loadFloatingBallState() {
   }
 }
 
+// 注意：推荐问题生成标志已移动到CustomDialog组件中
+
 // 初始化
 onMounted(async () => {
   console.log("App.vue mounted - 初始化开始");
@@ -65,6 +67,8 @@ onMounted(async () => {
 
   // 监听停止流式事件
   window.addEventListener("stopStreaming", handleStopStreaming);
+
+  // 注意：推荐问题现在在对话弹框打开时请求，而不是页面加载时
 
   console.log("App.vue 初始化完成");
 
@@ -105,6 +109,10 @@ async function loadSettings() {
     console.error("加载设置异常:", error);
   }
 }
+
+// 注意：推荐问题生成逻辑已移动到CustomDialog组件中
+
+// 注意：推荐问题生成和更新现在由CustomDialog组件处理
 
 // 设置消息监听
 function setupMessageListener() {
