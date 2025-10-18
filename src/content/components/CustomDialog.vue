@@ -42,48 +42,28 @@
 
     <!-- 对话框底部 -->
     <div class="dialog-footer">
-      <div class="dialog-toolbar-actions">
-        <el-tooltip
-          v-if="appState.messages.value.length > 0"
-          content="清空消息"
-          placement="top"
-        >
-          <el-button
-            type="danger"
-            size="small"
-            :disabled="appState.isProcessing.value || isRefetching"
-            @click="clearMessages"
-          >
-            <el-icon><Delete /></el-icon>
-            <span class="btn-text">清空</span>
-          </el-button>
-        </el-tooltip>
-        <el-tooltip
-          v-if="hasDetectedDataSources"
-          content="获取页面数据"
-          placement="top"
-        >
-          <el-button
-            type="primary"
-            size="small"
-            :loading="isRefetching"
-            :disabled="appState.isProcessing.value || isRefetching"
-            @click="exploreDataSources"
-          >
-            <el-icon><DataAnalysis /></el-icon>
-            <span class="btn-text">获取数据</span>
-          </el-button>
-        </el-tooltip>
-      </div>
       <ChatInput
         ref="chatInputRef"
         v-model="userInput"
-        :disabled="appState.isProcessing.value || isRefetching"
-        :is-loading="appState.isProcessing.value || isRefetching"
+        :disabled="appState.isProcessing.value"
+        :is-loading="appState.isProcessing.value"
         @submit="sendMessage"
         @keydown="handleKeydown"
         @stop="stopGeneration"
+        @input="handleInputChange"
       />
+
+      <!-- 命令建议 -->
+      <div v-if="commandSuggestions.length > 0" class="command-suggestions">
+        <div
+          v-for="suggestion in commandSuggestions"
+          :key="suggestion"
+          class="suggestion-item"
+          @click="selectSuggestion(suggestion)"
+        >
+          {{ suggestion }}
+        </div>
+      </div>
     </div>
 
     <!-- 调整大小手柄 -->
@@ -113,6 +93,8 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, onUnmounted, computed, watch } from "vue";
 import { appState, appActions } from "../../shared/stores/appStore";
+import { UnifiedCommandExecutor } from "../../shared/services/unifiedCommandExecutor";
+import { useContextStore } from "../../shared/stores/contextStore";
 import {
   handleError,
   getUserFriendlyMessage,
@@ -133,7 +115,6 @@ import ChatMessages from "./ChatMessages.vue";
 import ChatInput from "./ChatInput.vue";
 import ProcessingSteps from "./ProcessingSteps.vue";
 import SuggestedQuestions from "./SuggestedQuestions.vue";
-import { Delete, RefreshRight, DataAnalysis } from "@element-plus/icons-vue";
 
 // 声明chrome类型
 declare const chrome: any;
@@ -154,8 +135,7 @@ const emit = defineEmits<{
 // 响应式数据
 const userInput = ref("");
 const chatInputRef = ref();
-const isRefetching = ref(false);
-const hasDetectedDataSources = ref(false);
+const commandSuggestions = ref<string[]>([]);
 
 // 智能问题推荐相关
 const suggestedQuestions = ref<string[]>([]);
@@ -167,6 +147,10 @@ const showSuggestedQuestions = computed(() => {
     appState.settings.value?.enableSuggestedQuestions !== false
   );
 });
+
+// 服务实例
+const commandExecutor = UnifiedCommandExecutor.getInstance();
+const contextStore = useContextStore();
 
 // 从全局状态获取推荐问题
 function loadSuggestedQuestions() {
@@ -454,6 +438,9 @@ onMounted(async () => {
   await loadDialogPosition();
   await loadDialogSize();
 
+  // 初始化命令执行器
+  commandExecutor.initialize();
+
   // 监听窗口大小变化（使用防抖）
   window.addEventListener("resize", handleWindowResizeDebounced);
 
@@ -465,14 +452,6 @@ onMounted(async () => {
     "suggestedQuestionsUpdated",
     handleSuggestedQuestionsUpdated
   );
-
-  // 初始化一次可拉取端点状态
-  updateRefetchableStatus();
-
-  // 页面加载时自动检测数据源
-  setTimeout(() => {
-    updateRefetchableStatus();
-  }, 1000);
 
   // 加载推荐问题
   loadSuggestedQuestions();
@@ -488,6 +467,9 @@ onMounted(async () => {
 
 // 清理
 onUnmounted(() => {
+  // 清理命令执行器
+  commandExecutor.cleanup();
+
   // 清理事件监听器
   window.removeEventListener("resize", handleWindowResizeDebounced);
   document.removeEventListener("mousedown", handleBackgroundClick);
@@ -617,12 +599,14 @@ function close() {
 // 发送消息
 async function sendMessage() {
   const message = userInput.value.trim();
-  if (!message || appState.isProcessing.value || isRefetching.value) return;
+  if (!message || appState.isProcessing.value) return;
 
   console.log("CustomDialog开始发送消息:", message);
 
   // 清空输入框
   userInput.value = "";
+  commandSuggestions.value = [];
+
   // 同时清空contenteditable div的内容
   if (chatInputRef.value) {
     chatInputRef.value.clear();
@@ -638,78 +622,22 @@ async function sendMessage() {
 
   // 设置新的生成状态
   appActions.setGenerating(true);
-  // 注意：不在这里设置 isStreaming，等待第一个流式数据块到达时设置
 
   try {
     // 添加用户消息
     appActions.addMessage(message, true);
 
-    // 步骤1：准备内容（合并了原来的三个快速步骤）
-    startStep("prepare_content");
-    const pageContent = (window as any).parseWebContent
-      ? (window as any).parseWebContent()
-      : "";
+    // 使用命令执行器处理消息
+    const result = await commandExecutor.executeCommand(message);
 
-    // 分析网络请求
-    let networkAnalysis = null;
-    try {
-      networkAnalysis = analyzeNetworkRequests();
-      console.log("网络分析结果:", networkAnalysis);
-
-      // 输出调试信息
-      const debugInfo = networkAnalyzer.getDebugInfo();
-      console.log("网络请求分析统计:", {
-        总请求数: debugInfo.totalRequests,
-        有意义请求: debugInfo.meaningfulRequests,
-        已分析请求: debugInfo.analyzedRequests,
-        忽略请求: debugInfo.ignoredRequests,
-        分类统计: debugInfo.requestBreakdown,
-      });
-      // 根据分析结果刷新可拉取端点状态
-      updateRefetchableStatus(networkAnalysis);
-    } catch (error) {
-      console.warn("网络分析失败:", error);
+    if (result.success) {
+      // 只有当消息不为空时才添加AI响应
+      if (result.message && result.message.trim()) {
+        appActions.addMessage(result.message, false);
+      }
+    } else {
+      throw new Error(result.message || "命令执行失败");
     }
-
-    completeStep(
-      "prepare_content",
-      `已准备 ${pageContent.length} 个字符的内容${
-        networkAnalysis
-          ? `和 ${networkAnalysis.apiCalls.length} 个网络请求`
-          : ""
-      }，正在生成智能提示词...`
-    );
-
-    // 构建对话历史
-    const conversationHistory = appState.messages.value
-      .filter((msg) => msg.isUser || !msg.isUser) // 包含所有消息
-      .map((msg) => ({
-        role: msg.isUser ? ("user" as const) : ("assistant" as const),
-        content: msg.content,
-      }));
-
-    // 步骤4：开始AI对话处理
-    startStep("ai_conversation");
-    const response = await chrome.runtime.sendMessage({
-      action: "generateAnswer",
-      data: {
-        question: message,
-        pageContent: pageContent,
-        tabId: "current",
-        conversationHistory: conversationHistory,
-        url: pageContext.value.url,
-        networkAnalysis: networkAnalysis,
-      },
-    });
-
-    console.log("收到Background Script响应:", response);
-
-    if (!response.success) {
-      throw new Error(response.error || "未知错误");
-    }
-
-    // 注意：不在这里完成步骤，因为流式处理还在进行中
-    // 步骤完成将在App.vue的handleStreamChunk中处理
   } catch (error) {
     console.error("发送消息失败:", error);
 
@@ -737,10 +665,7 @@ async function sendMessage() {
 
     appActions.addMessage(errorMessage, false);
   } finally {
-    // 注意：不要在这里重置流式状态，因为流式处理可能还在进行中
-    // 流式状态会在App.vue的handleStreamChunk中管理
-    // appActions.setGenerating(false);
-    // appActions.setStreaming(false);
+    appActions.setGenerating(false);
   }
 }
 
@@ -750,6 +675,26 @@ function handleKeydown(e: Event) {
   if (keyboardEvent.key === "Enter" && !keyboardEvent.shiftKey) {
     keyboardEvent.preventDefault();
     sendMessage();
+  }
+}
+
+// 处理输入变化
+function handleInputChange() {
+  if (userInput.value.length > 0) {
+    commandSuggestions.value = commandExecutor.getCommandSuggestions(
+      userInput.value
+    );
+  } else {
+    commandSuggestions.value = [];
+  }
+}
+
+// 选择建议
+function selectSuggestion(suggestion: string) {
+  userInput.value = suggestion;
+  commandSuggestions.value = [];
+  if (chatInputRef.value) {
+    chatInputRef.value.focus();
   }
 }
 
@@ -785,196 +730,12 @@ async function stopGeneration() {
   console.log("已停止生成");
 }
 
-import { parseWebContent as extractContent } from "../../shared/utils/contentExtractor";
-import {
-  analyzeNetworkRequests,
-  networkAnalyzer,
-} from "../../shared/utils/networkAnalyzer";
-
-// 解析网页内容 - 使用优化后的提取器
-function parseWebContent(): string {
-  return extractContent();
-}
-
-// URL格式化辅助函数
-function formatUrl(url: string) {
-  try {
-    const urlObj = new URL(url);
-    const domain = urlObj.hostname;
-    const path = urlObj.pathname + urlObj.search;
-    return {
-      domain: domain.length > 30 ? domain.substring(0, 30) + "..." : domain,
-      path: path.length > 50 ? path.substring(0, 50) + "..." : path,
-    };
-  } catch (error) {
-    // 如果URL解析失败，返回原始URL
-    return {
-      domain: url.length > 30 ? url.substring(0, 30) + "..." : url,
-      path: "",
-    };
-  }
-}
-
-// 数据探索功能 - 获取页面数据源
-async function exploreDataSources() {
-  console.log("开始数据探索，当前状态:", { isRefetching: isRefetching.value });
-  if (isRefetching.value) return;
-  isRefetching.value = true;
-  console.log("设置加载状态为true");
-
-  try {
-    const analysis = analyzeNetworkRequests();
-    const endpoints = Array.from(new Set(analysis.dataEndpoints)).slice(0, 5);
-
-    if (endpoints.length === 0) {
-      appActions.addMessage(
-        "🔍 **数据探索结果**\n\n未发现可获取的数据源。页面可能没有API接口或数据接口。",
-        false
-      );
-      updateRefetchableStatus(analysis);
-      isRefetching.value = false; // 重置按钮状态
-      return;
-    }
-
-    // 显示数据源预览和获取进度
-    const previewLines = endpoints.map((url, index) => {
-      const urlInfo = formatUrl(url);
-      return `**${index + 1}. ${urlInfo.domain}**\n   📍 路径: \`${
-        urlInfo.path
-      }\``;
-    });
-
-    // 先显示预览消息
-    appActions.addMessage(
-      `🔍 **数据探索**\n\n` +
-        `📊 检测到 ${endpoints.length} 个数据源，正在获取最新数据...\n\n` +
-        `**数据源列表：**\n${previewLines.join("\n")}\n\n` +
-        `⏳ 正在获取数据，请稍候...`,
-      false
-    );
-
-    const results: Array<{
-      url: string;
-      ok: boolean;
-      status: number;
-      hint: string;
-    }> = [];
-
-    for (const url of endpoints) {
-      try {
-        const res = await fetch(url, {
-          method: "GET",
-          credentials: "same-origin" as RequestCredentials,
-        });
-        let hint = "";
-        try {
-          const ct = res.headers.get("content-type") || "";
-          if (ct.includes("json")) {
-            const data = await res
-              .clone()
-              .json()
-              .catch(() => null);
-            if (data && typeof data === "object") {
-              const keys = Object.keys(data).slice(0, 5);
-              hint = keys.length ? `包含字段: ${keys.join(", ")}` : "JSON数据";
-            } else {
-              hint = "JSON数据";
-            }
-          } else if (ct.includes("text")) {
-            const text = await res
-              .clone()
-              .text()
-              .catch(() => "");
-            hint = text
-              ? `文本内容 (${Math.min(text.length, 120)}字符)`
-              : "文本数据";
-          } else if (ct.includes("xml")) {
-            hint = "XML数据";
-          } else if (ct.includes("html")) {
-            hint = "HTML页面";
-          } else {
-            hint = ct ? `数据格式: ${ct.split(";")[0]}` : "未知格式";
-          }
-        } catch {
-          hint = "数据解析失败";
-        }
-
-        results.push({ url, ok: res.ok, status: res.status, hint });
-      } catch (e) {
-        results.push({ url, ok: false, status: 0, hint: "请求失败" });
-      }
-    }
-
-    const success = results.filter((r) => r.ok).length;
-    const fail = results.length - success;
-    const lines = results.map((r, index) => {
-      const urlInfo = formatUrl(r.url);
-      const statusIcon = r.ok ? "✅" : "❌";
-      const statusText = r.ok ? "成功" : "失败";
-      const statusEmoji = r.ok ? "🟢" : "🔴";
-
-      return (
-        `**${index + 1}. ${statusIcon} ${urlInfo.domain}**\n` +
-        `   📍 **路径**: \`${urlInfo.path}\`\n` +
-        `   📊 **状态**: ${statusEmoji} ${statusText} (${r.status})\n` +
-        `   📝 **数据**: ${r.hint}\n`
-      );
-    });
-
-    // 添加最终结果消息
-    const resultMessage =
-      `🔍 **数据探索结果**\n\n` +
-      `📊 发现 ${results.length} 个数据源，成功获取 ${success} 个，失败 ${fail} 个\n\n` +
-      `**数据详情：**\n${lines.join("\n")}\n\n` +
-      `💡 *提示：您可以基于这些数据向AI提问，获取更深入的分析和见解。*`;
-
-    console.log("准备添加结果消息:", resultMessage);
-    appActions.addMessage(resultMessage, false);
-    console.log("结果消息已添加");
-  } finally {
-    isRefetching.value = false;
-    // 结束后刷新一次可拉取端点状态
-    updateRefetchableStatus();
-  }
-}
-
-// 更新"是否有可获取数据源"的状态
-function updateRefetchableStatus(latestAnalysis?: any) {
-  try {
-    const analysis = latestAnalysis ?? analyzeNetworkRequests();
-    const endpoints = Array.from(new Set(analysis.dataEndpoints));
-    hasDetectedDataSources.value = endpoints.length > 0;
-  } catch {
-    hasDetectedDataSources.value = false;
-  }
-}
-
 // 注意：推荐问题生成现在由App.vue统一管理
 
 // 使用建议的问题
 function useSuggestedQuestion(question: string) {
   userInput.value = question;
   sendMessage();
-}
-
-// 清空消息
-async function clearMessages() {
-  if (appState.isProcessing.value || isRefetching.value) {
-    return;
-  }
-
-  appActions.clearMessages();
-  console.log("已清空所有消息");
-
-  // 立即清空推荐问题，避免显示旧问题
-  suggestedQuestions.value = [];
-  (window as any).suggestedQuestions = [];
-  console.log("已清空推荐问题");
-
-  // 清空后重新生成推荐问题
-  setTimeout(async () => {
-    await generateSuggestedQuestionsIfNeeded();
-  }, 100);
 }
 
 // 处理对话框鼠标按下
@@ -1587,6 +1348,52 @@ onUnmounted(() => {
   50% {
     opacity: 1;
   }
+}
+
+/* 命令建议样式 */
+.command-suggestions {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  background: linear-gradient(
+    135deg,
+    rgba(26, 26, 46, 0.95) 0%,
+    rgba(22, 33, 62, 0.9) 50%,
+    rgba(15, 52, 96, 0.9) 100%
+  );
+  border: 1px solid rgba(212, 175, 55, 0.3);
+  border-radius: 12px;
+  padding: 8px;
+  margin-bottom: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+  backdrop-filter: blur(20px);
+  z-index: 1000;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.suggestion-item {
+  padding: 8px 12px;
+  margin: 2px 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #e0e0e0;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+}
+
+.suggestion-item:hover {
+  background: rgba(212, 175, 55, 0.2);
+  border-color: rgba(212, 175, 55, 0.4);
+  color: #fff;
+  transform: translateX(4px);
+}
+
+.suggestion-item:active {
+  transform: translateX(2px) scale(0.98);
 }
 
 /* 响应式设计已通过JavaScript边距配置系统处理，无需额外CSS */

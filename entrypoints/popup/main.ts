@@ -1,4 +1,5 @@
 import { createApp } from "vue";
+import { createPinia } from "pinia";
 import ElementPlus from "element-plus";
 import * as ElementPlusIconsVue from "@element-plus/icons-vue";
 import "@/shared/styles/reset.css"; // 引入reset.css
@@ -7,6 +8,12 @@ import "../../src/popup/style.css";
 import App from "../../src/popup/App.vue";
 
 const app = createApp(App);
+
+// 创建Pinia实例
+const pinia = createPinia();
+
+// 注册Pinia
+app.use(pinia);
 
 // 注册Element Plus
 app.use(ElementPlus);

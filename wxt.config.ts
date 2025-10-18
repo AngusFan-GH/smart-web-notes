@@ -30,10 +30,11 @@ export default defineConfig({
     },
   }),
   manifest: {
+    manifest_version: 3,
     name: "Web Assistant",
     description: "AI-powered web content analysis",
     version: "1.0",
-    permissions: ["activeTab", "scripting", "storage"],
+    permissions: ["activeTab", "scripting", "storage", "tabs"],
     icons: {
       16: "/icons/icon16.png",
       32: "/icons/icon32.png",

@@ -22,6 +22,7 @@ export interface Settings {
   temperature: number;
   showProcessingSteps: boolean;
   enableSuggestedQuestions: boolean;
+  enableBrowserControl: boolean;
 }
 
 export interface ApiRequest {

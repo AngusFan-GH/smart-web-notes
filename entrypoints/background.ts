@@ -50,6 +50,34 @@ export default defineBackground(() => {
           handleGenerateSuggestedQuestions(message.data, sendResponse);
           break;
 
+        case "injectCSS":
+          handleInjectCSS(message.data, sendResponse);
+          break;
+
+        case "removeCSS":
+          handleRemoveCSS(message.data, sendResponse);
+          break;
+
+        case "removeDOMElement":
+          handleRemoveDOMElement(message.data, sendResponse);
+          break;
+
+        case "addDOMElement":
+          handleAddDOMElement(message.data, sendResponse);
+          break;
+
+        case "modifyDOMElement":
+          handleModifyDOMElement(message.data, sendResponse);
+          break;
+
+        case "moveDOMElement":
+          handleMoveDOMElement(message.data, sendResponse);
+          break;
+
+        case "executeJavaScript":
+          handleExecuteJavaScript(message.data, sendResponse);
+          break;
+
         default:
           sendResponse({
             success: false,
@@ -66,15 +94,34 @@ export default defineBackground(() => {
     sendResponse: (response: ChromeResponse) => void
   ) {
     try {
-      const settings = await chrome.storage.sync.get(DEFAULT_SETTINGS);
+      // 获取所有设置，而不是只获取DEFAULT_SETTINGS中的键
+      const settings = await chrome.storage.sync.get(null);
+      console.log("Background script handleGetSettings读取的设置:", settings);
+
+      // 如果没有设置，使用默认设置
+      if (Object.keys(settings).length === 0) {
+        console.log("存储中没有设置，使用默认设置");
+        const defaultSettings = { ...DEFAULT_SETTINGS };
+        sendResponse({
+          success: true,
+          data: defaultSettings,
+        });
+        return;
+      }
+
+      // 合并默认设置和存储的设置
+      const mergedSettings = { ...DEFAULT_SETTINGS, ...settings };
+      console.log("合并后的设置:", mergedSettings);
+
       // 动态加载apiService
       const { apiService } = await import("../src/shared/services/apiService");
-      apiService.setSettings(settings);
+      apiService.setSettings(mergedSettings);
       sendResponse({
         success: true,
-        data: settings,
+        data: mergedSettings,
       });
     } catch (error) {
+      console.error("获取设置失败:", error);
       sendResponse({
         success: false,
         error: error instanceof Error ? error.message : String(error),
@@ -116,6 +163,7 @@ export default defineBackground(() => {
         conversationHistory,
         url,
         networkAnalysis,
+        domStructure,
       } = data;
 
       if (!question) {
@@ -165,6 +213,56 @@ export default defineBackground(() => {
         const { apiService } = await import(
           "../src/shared/services/apiService"
         );
+
+        // 确保API设置已加载
+        const settings = await chrome.storage.sync.get(null);
+        console.log("Background script读取的设置:", settings);
+        console.log("API配置检查:", {
+          custom_apiKey: !!settings.custom_apiKey,
+          custom_apiBase: !!settings.custom_apiBase,
+          custom_model: !!settings.custom_model,
+          apiType: settings.apiType,
+        });
+
+        if (
+          !settings.custom_apiKey ||
+          !settings.custom_apiBase ||
+          !settings.custom_model ||
+          settings.custom_apiKey.trim() === "" ||
+          settings.custom_apiBase.trim() === "" ||
+          settings.custom_model.trim() === ""
+        ) {
+          console.error("API配置不完整:", {
+            custom_apiKey: settings.custom_apiKey,
+            custom_apiBase: settings.custom_apiBase,
+            custom_model: settings.custom_model,
+          });
+          throw new Error("API配置未设置或配置不完整");
+        }
+
+        // 设置API配置
+        apiService.setSettings(settings);
+
+        // 从content script获取DOM信息
+        let domInfo = null;
+        try {
+          const tabs = await chrome.tabs.query({
+            active: true,
+            currentWindow: true,
+          });
+          if (tabs[0]?.id) {
+            const domResponse = await chrome.tabs.sendMessage(tabs[0].id, {
+              action: "getDOMInfo",
+            });
+            if (domResponse?.success) {
+              domInfo = domResponse.data;
+              console.log("获取到DOM信息:", domInfo);
+            }
+          }
+        } catch (domError) {
+          console.log("获取DOM信息失败，继续使用现有数据:", domError);
+        }
+
         await apiService.generateAnswer(
           question,
           pageContent || "",
@@ -222,7 +320,8 @@ export default defineBackground(() => {
           currentStreamController,
           conversationHistory,
           url,
-          networkAnalysis
+          networkAnalysis,
+          domInfo
         );
       } catch (error) {
         // 重置流式状态
@@ -312,6 +411,39 @@ export default defineBackground(() => {
       // 动态加载apiService
       const { apiService } = await import("../src/shared/services/apiService");
 
+      // 确保API设置已加载
+      const settings = await chrome.storage.sync.get(null);
+      console.log("Background script读取的设置:", settings);
+      console.log("API配置检查:", {
+        custom_apiKey: !!settings.custom_apiKey,
+        custom_apiBase: !!settings.custom_apiBase,
+        custom_model: !!settings.custom_model,
+        apiType: settings.apiType,
+      });
+
+      if (
+        !settings.custom_apiKey ||
+        !settings.custom_apiBase ||
+        !settings.custom_model ||
+        settings.custom_apiKey.trim() === "" ||
+        settings.custom_apiBase.trim() === "" ||
+        settings.custom_model.trim() === ""
+      ) {
+        console.error("API配置不完整:", {
+          custom_apiKey: settings.custom_apiKey,
+          custom_apiBase: settings.custom_apiBase,
+          custom_model: settings.custom_model,
+        });
+        sendResponse({
+          success: false,
+          error: "API配置未设置或配置不完整",
+        });
+        return;
+      }
+
+      // 设置API配置
+      apiService.setSettings(settings);
+
       // 调用API生成建议问题
       const response = await apiService.generateSuggestedQuestions(
         prompt,
@@ -325,6 +457,456 @@ export default defineBackground(() => {
       });
     } catch (error) {
       console.error("生成建议问题失败:", error);
+      sendResponse({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  // 注入CSS
+  async function handleInjectCSS(
+    data: any,
+    sendResponse: (response: ChromeResponse) => void
+  ) {
+    try {
+      const { css, styleId } = data;
+
+      if (!css) {
+        sendResponse({
+          success: false,
+          error: "CSS代码不能为空",
+        });
+        return;
+      }
+
+      // 获取当前活动标签页
+      const tabs = await chrome.tabs.query({
+        active: true,
+        currentWindow: true,
+      });
+
+      if (!tabs[0]?.id) {
+        sendResponse({
+          success: false,
+          error: "无法获取当前标签页",
+        });
+        return;
+      }
+
+      // 检查chrome.scripting API是否可用
+      if (!chrome.scripting || !chrome.scripting.insertCSS) {
+        throw new Error(
+          "chrome.scripting.insertCSS API不可用，请检查manifest版本和权限"
+        );
+      }
+
+      // 注入CSS (使用Manifest V3的chrome.scripting API)
+      await chrome.scripting.insertCSS({
+        target: { tabId: tabs[0].id },
+        css: css,
+      });
+
+      console.log(`CSS注入成功: ${styleId}`);
+      sendResponse({
+        success: true,
+        data: { message: "CSS注入成功" },
+      });
+    } catch (error) {
+      console.error("CSS注入失败:", error);
+      sendResponse({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  // 移除CSS
+  async function handleRemoveCSS(
+    data: any,
+    sendResponse: (response: ChromeResponse) => void
+  ) {
+    try {
+      const { css, styleId } = data;
+
+      if (!css) {
+        sendResponse({
+          success: false,
+          error: "CSS代码不能为空",
+        });
+        return;
+      }
+
+      // 获取当前活动标签页
+      const tabs = await chrome.tabs.query({
+        active: true,
+        currentWindow: true,
+      });
+
+      if (!tabs[0]?.id) {
+        sendResponse({
+          success: false,
+          error: "无法获取当前标签页",
+        });
+        return;
+      }
+
+      // 检查chrome.scripting API是否可用
+      if (!chrome.scripting || !chrome.scripting.removeCSS) {
+        throw new Error(
+          "chrome.scripting.removeCSS API不可用，请检查manifest版本和权限"
+        );
+      }
+
+      // 移除CSS (使用Manifest V3的chrome.scripting API)
+      await chrome.scripting.removeCSS({
+        target: { tabId: tabs[0].id },
+        css: css,
+      });
+
+      console.log(`CSS移除成功: ${styleId}`);
+      sendResponse({
+        success: true,
+        data: { message: "CSS移除成功" },
+      });
+    } catch (error) {
+      console.error("CSS移除失败:", error);
+      sendResponse({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  // 移除DOM元素
+  async function handleRemoveDOMElement(
+    data: any,
+    sendResponse: (response: ChromeResponse) => void
+  ) {
+    try {
+      const { selector, reason } = data;
+
+      if (!selector) {
+        sendResponse({
+          success: false,
+          error: "选择器不能为空",
+        });
+        return;
+      }
+
+      // 获取当前活动标签页
+      const tabs = await chrome.tabs.query({
+        active: true,
+        currentWindow: true,
+      });
+
+      if (!tabs[0]?.id) {
+        sendResponse({
+          success: false,
+          error: "无法获取当前标签页",
+        });
+        return;
+      }
+
+      // 发送消息到content script执行DOM操作
+      chrome.tabs.sendMessage(
+        tabs[0].id,
+        {
+          action: "removeDOMElement",
+          data: { selector, reason },
+        },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            sendResponse({
+              success: false,
+              error: chrome.runtime.lastError.message,
+            });
+            return;
+          }
+
+          sendResponse({
+            success: true,
+            data: response,
+          });
+        }
+      );
+    } catch (error) {
+      console.error("移除DOM元素失败:", error);
+      sendResponse({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  // 添加DOM元素
+  async function handleAddDOMElement(
+    data: any,
+    sendResponse: (response: ChromeResponse) => void
+  ) {
+    try {
+      const { selector, tag, content, attributes, position, reason } = data;
+
+      if (!selector) {
+        sendResponse({
+          success: false,
+          error: "选择器不能为空",
+        });
+        return;
+      }
+
+      // 获取当前活动标签页
+      const tabs = await chrome.tabs.query({
+        active: true,
+        currentWindow: true,
+      });
+
+      if (!tabs[0]?.id) {
+        sendResponse({
+          success: false,
+          error: "无法获取当前标签页",
+        });
+        return;
+      }
+
+      // 发送消息到content script执行DOM操作
+      chrome.tabs.sendMessage(
+        tabs[0].id,
+        {
+          action: "addDOMElement",
+          data: { selector, tag, content, attributes, position, reason },
+        },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            sendResponse({
+              success: false,
+              error: chrome.runtime.lastError.message,
+            });
+            return;
+          }
+
+          sendResponse({
+            success: true,
+            data: response,
+          });
+        }
+      );
+    } catch (error) {
+      console.error("添加DOM元素失败:", error);
+      sendResponse({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  // 修改DOM元素
+  async function handleModifyDOMElement(
+    data: any,
+    sendResponse: (response: ChromeResponse) => void
+  ) {
+    try {
+      const { selector, content, attributes, reason } = data;
+
+      if (!selector) {
+        sendResponse({
+          success: false,
+          error: "选择器不能为空",
+        });
+        return;
+      }
+
+      // 获取当前活动标签页
+      const tabs = await chrome.tabs.query({
+        active: true,
+        currentWindow: true,
+      });
+
+      if (!tabs[0]?.id) {
+        sendResponse({
+          success: false,
+          error: "无法获取当前标签页",
+        });
+        return;
+      }
+
+      // 发送消息到content script执行DOM操作
+      chrome.tabs.sendMessage(
+        tabs[0].id,
+        {
+          action: "modifyDOMElement",
+          data: { selector, content, attributes, reason },
+        },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            sendResponse({
+              success: false,
+              error: chrome.runtime.lastError.message,
+            });
+            return;
+          }
+
+          sendResponse({
+            success: true,
+            data: response,
+          });
+        }
+      );
+    } catch (error) {
+      console.error("修改DOM元素失败:", error);
+      sendResponse({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  // 移动DOM元素
+  async function handleMoveDOMElement(
+    data: any,
+    sendResponse: (response: ChromeResponse) => void
+  ) {
+    try {
+      const { selector, targetSelector, position, reason } = data;
+
+      if (!selector || !targetSelector) {
+        sendResponse({
+          success: false,
+          error: "选择器和目标选择器不能为空",
+        });
+        return;
+      }
+
+      // 获取当前活动标签页
+      const tabs = await chrome.tabs.query({
+        active: true,
+        currentWindow: true,
+      });
+
+      if (!tabs[0]?.id) {
+        sendResponse({
+          success: false,
+          error: "无法获取当前标签页",
+        });
+        return;
+      }
+
+      // 发送消息到content script执行DOM操作
+      chrome.tabs.sendMessage(
+        tabs[0].id,
+        {
+          action: "moveDOMElement",
+          data: { selector, targetSelector, position, reason },
+        },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            sendResponse({
+              success: false,
+              error: chrome.runtime.lastError.message,
+            });
+            return;
+          }
+
+          sendResponse({
+            success: true,
+            data: response,
+          });
+        }
+      );
+    } catch (error) {
+      console.error("移动DOM元素失败:", error);
+      sendResponse({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  // 执行JavaScript代码
+  async function handleExecuteJavaScript(
+    data: any,
+    sendResponse: (response: ChromeResponse) => void
+  ) {
+    try {
+      const { code, javascript, reason } = data;
+      const jsCode = code || javascript; // 支持两种参数名
+
+      if (!jsCode) {
+        sendResponse({
+          success: false,
+          error: "JavaScript代码不能为空",
+        });
+        return;
+      }
+
+      // 获取当前活动标签页
+      const tabs = await chrome.tabs.query({
+        active: true,
+        currentWindow: true,
+      });
+
+      if (!tabs[0]?.id) {
+        sendResponse({
+          success: false,
+          error: "无法获取当前标签页",
+        });
+        return;
+      }
+
+      // 使用chrome.scripting.executeScript执行JavaScript
+      try {
+        // 创建一个函数来执行大模型生成的JavaScript代码
+        const executeUserCode = (code: string) => {
+          try {
+            // 直接执行用户代码，不使用Function构造函数
+            // 在页面上下文中直接执行代码
+            eval(code);
+
+            return {
+              success: true,
+              result: "JavaScript执行成功",
+              message: "JavaScript执行成功",
+            };
+          } catch (error) {
+            return {
+              success: false,
+              error: error.message,
+              message: "JavaScript执行失败",
+            };
+          }
+        };
+
+        const results = await chrome.scripting.executeScript({
+          target: { tabId: tabs[0].id },
+          func: executeUserCode,
+          args: [jsCode],
+        });
+
+        const executionResult = results[0]?.result;
+
+        if (executionResult?.success) {
+          sendResponse({
+            success: true,
+            data: {
+              message: executionResult.message,
+              result: executionResult.result,
+            },
+          });
+        } else {
+          sendResponse({
+            success: false,
+            error: executionResult?.error || "JavaScript执行失败",
+          });
+        }
+      } catch (scriptError) {
+        console.error("Script execution error:", scriptError);
+        sendResponse({
+          success: false,
+          error: `JavaScript执行错误: ${scriptError.message}`,
+        });
+      }
+    } catch (error) {
+      console.error("执行JavaScript失败:", error);
       sendResponse({
         success: false,
         error: error instanceof Error ? error.message : String(error),

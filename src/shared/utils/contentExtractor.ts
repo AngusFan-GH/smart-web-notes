@@ -45,6 +45,21 @@ export interface ExtractedContent {
     images: Array<{ alt: string; src: string }>;
   };
   networkAnalysis?: NetworkAnalysisResult;
+  domStructure?: {
+    elements: Array<{
+      tag: string;
+      id?: string;
+      classes?: string[];
+      text?: string;
+      selector: string;
+    }>;
+    commonSelectors: {
+      ads: string[];
+      navigation: string[];
+      content: string[];
+      sidebars: string[];
+    };
+  };
   metadata?: {
     url: string;
     title: string;
@@ -162,10 +177,14 @@ export class ContentExtractor {
       }
     }
 
+    // 提取DOM结构信息（用于浏览器控制）
+    const domStructure = this.extractDOMStructure();
+
     return {
       text: this.truncateText(text, options.maxLength),
       structure,
       networkAnalysis,
+      domStructure,
       metadata: {
         ...metadata,
         wordCount: this.countWords(text),
@@ -585,6 +604,196 @@ export class ContentExtractor {
   }
 
   /**
+   * 提取DOM结构信息
+   */
+  private extractDOMStructure(): ExtractedContent["domStructure"] {
+    const elements: Array<{
+      tag: string;
+      id?: string;
+      classes?: string[];
+      text?: string;
+      selector: string;
+      isVisible: boolean;
+      position?: { x: number; y: number; width: number; height: number };
+      parentSelector?: string;
+      childrenCount: number;
+    }> = [];
+
+    // 遍历所有有ID或class的元素，以及一些重要的无class元素
+    const allElements = document.querySelectorAll(
+      "*[id], *[class], main, article, section, header, footer, nav, aside"
+    );
+
+    allElements.forEach((element) => {
+      const tag = element.tagName.toLowerCase();
+      const id = element.id;
+      const classes = Array.from(element.classList);
+      const text = element.textContent?.trim().substring(0, 150); // 增加文本长度
+
+      // 检查元素是否可见
+      const rect = element.getBoundingClientRect();
+      const isVisible =
+        rect.width > 0 &&
+        rect.height > 0 &&
+        getComputedStyle(element).visibility !== "hidden" &&
+        getComputedStyle(element).display !== "none";
+
+      // 生成更精确的选择器
+      let selector = tag;
+      if (id) {
+        selector = `#${id}`;
+      } else if (classes.length > 0) {
+        // 使用所有相关的class，而不仅仅是第一个
+        const relevantClasses = classes.filter(
+          (cls) =>
+            !cls.includes("ng-") && // 排除Angular生成的class
+            !cls.match(/^[a-f0-9]{6,}$/) && // 排除随机生成的class
+            cls.length > 2 // 排除过短的class
+        );
+        if (relevantClasses.length > 0) {
+          selector = `.${relevantClasses.join(".")}`;
+        }
+      }
+
+      // 获取父元素选择器
+      let parentSelector = "";
+      const parent = element.parentElement;
+      if (parent) {
+        if (parent.id) {
+          parentSelector = `#${parent.id}`;
+        } else if (parent.classList.length > 0) {
+          const parentClasses = Array.from(parent.classList).filter(
+            (cls) =>
+              !cls.includes("ng-") &&
+              !cls.match(/^[a-f0-9]{6,}$/) &&
+              cls.length > 2
+          );
+          if (parentClasses.length > 0) {
+            parentSelector = `.${parentClasses.join(".")}`;
+          }
+        }
+        if (!parentSelector) {
+          parentSelector = parent.tagName.toLowerCase();
+        }
+      }
+
+      // 获取元素属性
+      const attributes: Record<string, string> = {};
+      if (element.attributes) {
+        for (let i = 0; i < element.attributes.length; i++) {
+          const attr = element.attributes[i];
+          if (attr.name && attr.value) {
+            attributes[attr.name] = attr.value;
+          }
+        }
+      }
+
+      // 生成更精确的选择器
+      const preciseSelectors = generateElementSelectors(
+        element,
+        id,
+        classes,
+        attributes
+      );
+
+      elements.push({
+        tag,
+        id,
+        classes: classes.length > 0 ? classes : undefined,
+        text,
+        selector,
+        isVisible,
+        position: isVisible
+          ? {
+              x: Math.round(rect.x),
+              y: Math.round(rect.y),
+              width: Math.round(rect.width),
+              height: Math.round(rect.height),
+            }
+          : undefined,
+        parentSelector,
+        childrenCount: element.children.length,
+        attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
+        preciseSelectors,
+        // 添加更多定位信息
+        xpath: generateXPath(element),
+        cssPath: generateCSSPath(element),
+        semanticRole: getSemanticRole(element),
+      });
+    });
+
+    // 识别常见的元素类型
+    const commonSelectors = {
+      ads: this.findCommonSelectors([
+        ".ad",
+        ".advertisement",
+        ".ads",
+        ".banner",
+        ".promo",
+        '[class*="ad-"]',
+        '[id*="ad-"]',
+        '[class*="banner"]',
+        '[class*="promo"]',
+        '[class*="sponsor"]',
+      ]),
+      navigation: this.findCommonSelectors([
+        ".nav",
+        ".navigation",
+        ".menu",
+        ".navbar",
+        ".header",
+        '[class*="nav"]',
+        '[class*="menu"]',
+        '[class*="header"]',
+      ]),
+      content: this.findCommonSelectors([
+        ".content",
+        ".main",
+        ".article",
+        ".post",
+        ".entry",
+        '[class*="content"]',
+        '[class*="main"]',
+        '[class*="article"]',
+      ]),
+      sidebars: this.findCommonSelectors([
+        ".sidebar",
+        ".aside",
+        ".widget",
+        ".sidebar-content",
+        '[class*="sidebar"]',
+        '[class*="aside"]',
+        '[class*="widget"]',
+      ]),
+    };
+
+    return {
+      elements: elements.slice(0, 200), // 增加到200个元素，提供更完整的页面结构
+      commonSelectors,
+    };
+  }
+
+  /**
+   * 查找常见选择器
+   */
+  private findCommonSelectors(selectors: string[]): string[] {
+    const found: string[] = [];
+
+    selectors.forEach((selector) => {
+      try {
+        const elements = document.querySelectorAll(selector);
+        if (elements.length > 0) {
+          found.push(selector);
+        }
+      } catch (error) {
+        // 忽略无效选择器
+      }
+    });
+
+    return found;
+  }
+
+  /**
    * 创建空结果
    */
   private createEmptyResult(): ExtractedContent {
@@ -635,4 +844,193 @@ export function parseWebContent(): string {
     enableSmartContent: false,
   });
   return result.text;
+}
+
+// 添加新的辅助方法
+function generateElementSelectors(
+  element: Element,
+  id: string,
+  classes: string[],
+  attributes: Record<string, string>
+): string[] {
+  const selectors: string[] = [];
+
+  // 1. ID选择器（最精确）
+  if (id) {
+    selectors.push(`#${id}`);
+  }
+
+  // 2. Class选择器
+  if (classes.length > 0) {
+    const relevantClasses = classes.filter(
+      (cls) =>
+        !cls.includes("ng-") && !cls.match(/^[a-f0-9]{6,}$/) && cls.length > 2
+    );
+
+    relevantClasses.forEach((cls) => {
+      selectors.push(`.${cls}`);
+    });
+
+    if (relevantClasses.length > 1) {
+      selectors.push(`.${relevantClasses.join(".")}`);
+    }
+  }
+
+  // 3. 属性选择器
+  Object.entries(attributes).forEach(([key, value]) => {
+    if (key !== "class" && key !== "id" && value) {
+      selectors.push(`[${key}="${value}"]`);
+      if (value.length > 10) {
+        selectors.push(`[${key}*="${value.substring(0, 20)}"]`);
+      }
+    }
+  });
+
+  // 4. 标签选择器
+  selectors.push(element.tagName.toLowerCase());
+
+  // 5. 组合选择器
+  if (id) {
+    selectors.push(`${element.tagName.toLowerCase()}#${id}`);
+  }
+
+  if (classes.length > 0) {
+    const relevantClasses = classes.filter(
+      (cls) =>
+        !cls.includes("ng-") && !cls.match(/^[a-f0-9]{6,}$/) && cls.length > 2
+    );
+    if (relevantClasses.length > 0) {
+      selectors.push(`${element.tagName.toLowerCase()}.${relevantClasses[0]}`);
+    }
+  }
+
+  return [...new Set(selectors)].slice(0, 8);
+}
+
+function generateXPath(element: Element): string {
+  if (element.id) {
+    return `//*[@id="${element.id}"]`;
+  }
+
+  const path: string[] = [];
+  let current: Element | null = element;
+
+  while (current && current.nodeType === Node.ELEMENT_NODE) {
+    let selector = current.tagName.toLowerCase();
+
+    if (current.id) {
+      selector += `[@id="${current.id}"]`;
+      path.unshift(selector);
+      break;
+    } else {
+      const siblings = Array.from(current.parentNode?.children || []).filter(
+        (sibling) => sibling.tagName === current!.tagName
+      );
+
+      if (siblings.length > 1) {
+        const index = siblings.indexOf(current) + 1;
+        selector += `[${index}]`;
+      }
+    }
+
+    path.unshift(selector);
+    current = current.parentElement;
+  }
+
+  return "//" + path.join("/");
+}
+
+function generateCSSPath(element: Element): string {
+  const path: string[] = [];
+  let current: Element | null = element;
+
+  while (current && current.nodeType === Node.ELEMENT_NODE) {
+    let selector = current.tagName.toLowerCase();
+
+    if (current.id) {
+      selector = `#${current.id}`;
+      path.unshift(selector);
+      break;
+    } else if (current.className && typeof current.className === "string") {
+      const classes = current.className
+        .split(/\s+/)
+        .filter(
+          (cls) =>
+            !cls.includes("ng-") &&
+            !cls.match(/^[a-f0-9]{6,}$/) &&
+            cls.length > 2
+        );
+      if (classes.length > 0) {
+        selector += `.${classes[0]}`;
+      }
+    }
+
+    path.unshift(selector);
+    current = current.parentElement;
+  }
+
+  return path.join(" > ");
+}
+
+function getSemanticRole(element: Element): string {
+  const tag = element.tagName.toLowerCase();
+  const role = element.getAttribute("role");
+  const ariaLabel = element.getAttribute("aria-label");
+  const text = element.textContent?.trim() || "";
+
+  // 基于ARIA角色
+  if (role) {
+    return `role: ${role}`;
+  }
+
+  // 基于标签语义
+  const semanticRoles: Record<string, string> = {
+    h1: "heading level 1",
+    h2: "heading level 2",
+    h3: "heading level 3",
+    h4: "heading level 4",
+    h5: "heading level 5",
+    h6: "heading level 6",
+    nav: "navigation",
+    main: "main content",
+    article: "article",
+    section: "section",
+    aside: "complementary content",
+    header: "banner",
+    footer: "contentinfo",
+    button: "button",
+    a: "link",
+    img: "image",
+    input: "input",
+    form: "form",
+    ul: "list",
+    ol: "list",
+    li: "list item",
+    table: "table",
+    thead: "table header",
+    tbody: "table body",
+    tr: "table row",
+    td: "table cell",
+    th: "table header cell",
+  };
+
+  if (semanticRoles[tag]) {
+    return semanticRoles[tag];
+  }
+
+  // 基于文本内容推断
+  if (text.includes("搜索") || text.includes("search")) {
+    return "search";
+  }
+  if (text.includes("登录") || text.includes("login")) {
+    return "login";
+  }
+  if (text.includes("注册") || text.includes("register")) {
+    return "register";
+  }
+  if (text.includes("菜单") || text.includes("menu")) {
+    return "menu";
+  }
+
+  return "generic element";
 }

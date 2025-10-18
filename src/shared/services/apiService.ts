@@ -96,7 +96,8 @@ export class ApiService {
       content: string;
     }>,
     url?: string,
-    networkAnalysis?: any
+    networkAnalysis?: any,
+    domStructure?: any
   ): Promise<void> {
     try {
       // 验证配置
@@ -110,7 +111,8 @@ export class ApiService {
         question,
         pageContent,
         url || (typeof window !== "undefined" ? window.location.href : ""),
-        networkAnalysis
+        networkAnalysis,
+        domStructure
       );
 
       // 构建消息
@@ -232,7 +234,7 @@ export class ApiService {
     if (pageContent && this.settings?.enableContext) {
       messages.push({
         role: "user",
-        content: `基于以下网页内容回答问题：\n\n${pageContent}\n\n问题：${question}`,
+        content: `作为智能网页助手，请基于以下网页内容回答问题：\n\n${pageContent}\n\n问题：${question}`,
       });
     } else {
       messages.push({

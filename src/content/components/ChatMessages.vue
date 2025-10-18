@@ -7,9 +7,40 @@
     >
       <div class="messages">
         <!-- AI开场白 -->
-        <div class="message-item assistant-message">
+        <div class="message-item assistant-message welcome-message">
           <div class="message-content">
-            你好！我可以帮你理解和分析当前网页的内容。
+            <div class="welcome-header">
+              <div class="welcome-icon">🤖</div>
+              <div class="welcome-title">智能网页助手</div>
+            </div>
+            <div class="welcome-description">
+              你好！我是你的智能网页助手，可以通过对话帮你：
+            </div>
+            <div class="welcome-features">
+              <div class="feature-item">
+                <span class="feature-icon">📊</span>
+                <span class="feature-text">分析网页内容和数据</span>
+              </div>
+              <div class="feature-item">
+                <span class="feature-icon">🎛️</span>
+                <span class="feature-text"
+                  >控制页面元素（隐藏广告、修改样式等）</span
+                >
+              </div>
+              <div class="feature-item">
+                <span class="feature-icon">💬</span>
+                <span class="feature-text">回答各种问题</span>
+              </div>
+              <div class="feature-item">
+                <span class="feature-icon">⚡</span>
+                <span class="feature-text">执行快捷命令</span>
+              </div>
+            </div>
+            <div class="welcome-action">
+              <div class="action-text">
+                试试说<code>"帮助"</code>查看所有可用命令，或直接问我任何问题！
+              </div>
+            </div>
           </div>
         </div>
 
@@ -736,5 +767,182 @@ onMounted(async () => {
   padding: 4px 8px;
   border-radius: 4px;
   font-family: monospace;
+}
+
+/* 欢迎语样式 */
+.welcome-message {
+  margin-bottom: 24px;
+}
+
+.welcome-message .message-content {
+  background: linear-gradient(
+    135deg,
+    rgba(245, 158, 11, 0.1) 0%,
+    rgba(245, 158, 11, 0.05) 100%
+  ) !important;
+  border: 1px solid rgba(245, 158, 11, 0.2) !important;
+  border-radius: 16px !important;
+  padding: 24px !important;
+  box-shadow: 0 4px 20px rgba(245, 158, 11, 0.1) !important;
+}
+
+.welcome-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.welcome-icon {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.welcome-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.welcome-description {
+  font-size: 15px;
+  color: #374151;
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+.welcome-features {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.feature-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 8px;
+  border: 1px solid rgba(245, 158, 11, 0.1);
+  transition: all 0.2s ease;
+}
+
+.feature-item:hover {
+  background: rgba(255, 255, 255, 0.8);
+  border-color: rgba(245, 158, 11, 0.2);
+  transform: translateX(4px);
+}
+
+.feature-icon {
+  font-size: 16px;
+  line-height: 1;
+  min-width: 20px;
+}
+
+.feature-text {
+  font-size: 14px;
+  color: #4b5563;
+  font-weight: 500;
+}
+
+.welcome-action {
+  padding: 12px 16px;
+  background: rgba(245, 158, 11, 0.1);
+  border-radius: 8px;
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.action-text {
+  font-size: 14px;
+  color: #374151;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.action-text code {
+  background: rgba(245, 158, 11, 0.2);
+  color: #d97706;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: "Monaco", "Menlo", "Ubuntu Mono", monospace;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* 响应式设计 - 欢迎语 */
+@media (max-width: 768px) {
+  .welcome-message .message-content {
+    padding: 20px !important;
+  }
+
+  .welcome-title {
+    font-size: 16px;
+  }
+
+  .welcome-description {
+    font-size: 14px;
+  }
+
+  .feature-item {
+    padding: 6px 10px;
+  }
+
+  .feature-text {
+    font-size: 13px;
+  }
+
+  .action-text {
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 480px) {
+  .welcome-message .message-content {
+    padding: 16px !important;
+  }
+
+  .welcome-header {
+    gap: 8px;
+  }
+
+  .welcome-icon {
+    font-size: 20px;
+  }
+
+  .welcome-title {
+    font-size: 15px;
+  }
+
+  .welcome-features {
+    gap: 8px;
+  }
+
+  .feature-item {
+    padding: 6px 8px;
+    gap: 8px;
+  }
+
+  .feature-icon {
+    font-size: 14px;
+    min-width: 16px;
+  }
+
+  .feature-text {
+    font-size: 12px;
+  }
+
+  .welcome-action {
+    padding: 10px 12px;
+  }
+
+  .action-text {
+    font-size: 12px;
+  }
 }
 </style>

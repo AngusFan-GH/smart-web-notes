@@ -157,6 +157,17 @@
                 </el-text>
               </el-form-item>
 
+              <el-form-item label="浏览器控制功能">
+                <el-switch
+                  v-model="settings.enableBrowserControl"
+                  active-text="启用"
+                  inactive-text="禁用"
+                />
+                <el-text class="help-text" type="info" size="small">
+                  允许AI通过对话控制浏览器行为（如隐藏广告、修改样式等）
+                </el-text>
+              </el-form-item>
+
               <el-form-item v-if="settings.enableContext" label="保留对话轮数">
                 <el-input-number
                   v-model="settings.maxContextRounds"
@@ -205,6 +216,14 @@
                     >
                       友好助手
                     </button>
+                    <button
+                      type="button"
+                      class="preset-btn"
+                      :class="{ active: isPresetActive('analyst') }"
+                      @click="applyPreset('analyst')"
+                    >
+                      数据分析师
+                    </button>
                   </div>
                 </div>
                 <div class="system-prompt-container">
@@ -212,7 +231,7 @@
                     v-model="settings.systemPrompt"
                     type="textarea"
                     :rows="4"
-                    placeholder="例如：你是一个专业的AI助手，专门帮助用户理解和分析网页内容。你的任务是准确理解网页内容的核心信息，根据用户问题提供精准、相关的回答，使用Markdown格式组织回答确保可读性。"
+                    placeholder="例如：你是一个智能网页助手，通过对话帮助用户理解和操作网页。你可以分析内容、控制页面元素、回答问题。使用Markdown格式组织回答，确保可读性。"
                     resize="vertical"
                     class="field"
                   />
@@ -335,11 +354,13 @@ let statusTimer: NodeJS.Timeout | null = null;
 const systemPromptPresets = {
   default: "",
   technical:
-    "你是一个技术专家，专门帮助解决编程和技术问题。请提供详细的代码示例、技术解释和最佳实践建议。使用Markdown格式组织回答，确保代码块有语法高亮。",
+    "你是一个技术专家AI助手，专门帮助分析和操作技术网页。你可以：\n• 分析代码、API和文档内容\n• 通过对话控制页面元素\n• 提供详细的技术解释和代码示例\n• 使用Markdown格式，确保代码高亮\n• 理解技术术语和概念",
   concise:
-    "你是一个简洁的AI助手。请用最少的文字回答问题，直接给出核心要点，避免冗余信息。使用简洁的Markdown格式。",
+    "你是一个简洁高效的AI助手，专注于快速解决问题。你可以：\n• 快速分析网页内容\n• 通过对话执行页面操作\n• 用最少的文字给出核心要点\n• 直接提供可操作的解决方案\n• 避免冗余信息",
   friendly:
-    "你是一个友好、幽默的AI助手。请用轻松愉快的语调回答问题，适当使用表情符号和比喻，让对话更有趣。使用Markdown格式组织回答。",
+    "你是一个友好、幽默的AI助手，让网页浏览更有趣。你可以：\n• 用轻松语调分析网页内容\n• 通过对话控制页面元素\n• 适当使用表情符号和比喻\n• 让技术操作变得简单易懂\n• 提供个性化的建议和帮助",
+  analyst:
+    "你是一个数据分析专家AI助手，擅长深度分析网页数据。你可以：\n• 分析网络请求和API数据\n• 提取和解释数据模式\n• 通过对话控制页面元素\n• 提供数据驱动的洞察\n• 使用图表和结构化展示",
 };
 
 // 应用预设模板
@@ -399,10 +420,33 @@ watch(activeTab, () => {
 // 加载设置
 async function loadSettings() {
   try {
-    const result = await chrome.storage.sync.get(DEFAULT_SETTINGS);
-    Object.assign(settings, result);
+    console.log("正在加载设置...");
+    // 首先尝试获取所有设置
+    const result = await chrome.storage.sync.get(null);
+    console.log("从存储加载的所有设置:", result);
+
+    // 如果没有设置，使用默认设置
+    if (Object.keys(result).length === 0) {
+      console.log("存储中没有设置，使用默认设置");
+      Object.assign(settings, DEFAULT_SETTINGS);
+    } else {
+      console.log("从存储加载的设置:", result);
+      console.log("API配置检查:", {
+        custom_apiKey: !!result.custom_apiKey,
+        custom_apiBase: !!result.custom_apiBase,
+        custom_model: !!result.custom_model,
+        apiType: result.apiType,
+      });
+
+      // 合并存储的设置和默认设置
+      Object.assign(settings, DEFAULT_SETTINGS, result);
+    }
+
+    console.log("合并后的设置:", settings);
   } catch (error) {
     console.error("加载设置失败:", error);
+    // 如果加载失败，使用默认设置
+    Object.assign(settings, DEFAULT_SETTINGS);
   }
 }
 
@@ -486,9 +530,51 @@ async function testApiConfig() {
 // 保存设置
 async function saveSettings() {
   try {
+    console.log("正在保存设置:", settings);
+    console.log("API配置检查:", {
+      custom_apiKey: !!settings.custom_apiKey,
+      custom_apiBase: !!settings.custom_apiBase,
+      custom_model: !!settings.custom_model,
+      apiType: settings.apiType,
+    });
+
+    // 检查API配置是否完整
+    if (
+      !settings.custom_apiKey ||
+      !settings.custom_apiBase ||
+      !settings.custom_model
+    ) {
+      showStatus("请填写完整的API配置信息", "error");
+      return;
+    }
+
+    console.log("开始保存到chrome.storage.sync...");
     await chrome.storage.sync.set(settings);
-    showStatus("设置保存成功！", "success");
+    console.log("保存到chrome.storage.sync完成");
+
+    // 验证保存是否成功
+    console.log("验证保存结果...");
+    const saved = await chrome.storage.sync.get(null);
+    console.log("保存后的设置:", saved);
+    console.log("保存后的API配置检查:", {
+      custom_apiKey: !!saved.custom_apiKey,
+      custom_apiBase: !!saved.custom_apiBase,
+      custom_model: !!saved.custom_model,
+      apiType: saved.apiType,
+    });
+
+    if (saved.custom_apiKey && saved.custom_apiBase && saved.custom_model) {
+      showStatus("设置保存成功！", "success");
+    } else {
+      showStatus("设置保存失败，请重试", "error");
+    }
   } catch (error) {
+    console.error("保存设置失败:", error);
+    console.error("错误详情:", {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    });
     showStatus(
       `保存失败：${error instanceof Error ? error.message : "未知错误"}`,
       "error"

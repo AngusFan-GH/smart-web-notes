@@ -4,7 +4,8 @@ export const DEFAULT_SETTINGS: Settings = {
   apiType: "custom",
   custom_apiKey: "sk-luulfdrjkupdjynjwjrakhugpeizmlhfhomywdiiauspncpc",
   custom_apiBase: "https://api.siliconflow.cn/v1/chat/completions",
-  custom_model: "deepseek-ai/DeepSeek-R1",
+  custom_model: "deepseek-ai/DeepSeek-V3",
+  // custom_model: "deepseek-ai/DeepSeek-R1",
   systemPrompt: "",
   enableContext: true,
   maxContextRounds: 5,
@@ -13,6 +14,7 @@ export const DEFAULT_SETTINGS: Settings = {
   temperature: 0.7,
   showProcessingSteps: false,
   enableSuggestedQuestions: true,
+  enableBrowserControl: true,
 } as const;
 
 export const API_CONFIG_INFO = {
