@@ -236,6 +236,15 @@ export class ErrorHandler {
           retryable: false,
         };
 
+      case 400:
+        return {
+          type: "api",
+          message: errorMessage,
+          userMessage: "请求参数错误，可能是内容过长或格式不正确",
+          action: "检查请求内容",
+          retryable: true,
+        };
+
       case 404:
         return {
           type: "api",

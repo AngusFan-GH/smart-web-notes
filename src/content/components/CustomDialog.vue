@@ -615,14 +615,15 @@ async function sendMessage() {
   if (chatInputRef.value) {
     chatInputRef.value.clear();
   }
-  // 重置流式完成标志
-  if ((window as any).resetStreamState) {
-    (window as any).resetStreamState();
-  }
 
   // 显示处理步骤
   const steps = userFeedback.generateContentAnalysisSteps();
   showProcessingSteps(steps);
+
+  // 重置流式完成标志，准备接收新的流式消息
+  if ((window as any).resetStreamingCompletedFlag) {
+    (window as any).resetStreamingCompletedFlag();
+  }
 
   // 设置新的生成状态
   appActions.setGenerating(true);
@@ -638,6 +639,14 @@ async function sendMessage() {
       // 只有当消息不为空时才添加AI响应
       if (result.message && result.message.trim()) {
         appActions.addMessage(result.message, false);
+      }
+
+      // 只有直接命令才立即重置状态，AI命令让流式处理自己管理状态
+      if (result.type === "direct") {
+        console.log("直接命令执行完成，重置状态");
+        stateManager.reset();
+      } else {
+        console.log("AI命令已发送，等待流式处理管理状态");
       }
     } else {
       throw new Error(result.message || "命令执行失败");
@@ -668,11 +677,9 @@ async function sendMessage() {
     }
 
     appActions.addMessage(errorMessage, false);
-  } finally {
-    nextTick(() => {
-      appActions.setGenerating(false);
-      appActions.setStreaming(false);
-    });
+
+    // 错误情况下总是重置状态
+    stateManager.reset();
   }
 }
 

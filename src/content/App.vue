@@ -105,6 +105,12 @@ onMounted(async () => {
   // 监听停止流式事件
   window.addEventListener("stopStreaming", handleStopStreaming);
 
+  // 监听消息清除事件，重置流式完成标志
+  window.addEventListener("messagesCleared", () => {
+    console.log("收到消息清除事件，重置流式完成标志");
+    isStreamingCompleted = false;
+  });
+
   // 注意：推荐问题现在在对话弹框打开时请求，而不是页面加载时
 
   console.log("App.vue 初始化完成");
@@ -268,6 +274,9 @@ function handleMessage(
 function resetStreamState() {
   console.log("重置流式状态");
 
+  // 重置完成标志
+  isStreamingCompleted = false;
+
   // 清除超时器
   if (streamingTimeout) {
     clearTimeout(streamingTimeout);
@@ -278,8 +287,15 @@ function resetStreamState() {
   stateManager.reset();
 }
 
+// 仅重置流式完成标志（用于新对话开始）
+function resetStreamingCompletedFlag() {
+  console.log("重置流式完成标志");
+  isStreamingCompleted = false;
+}
+
 // 暴露重置函数到全局，供其他组件调用
 (window as any).resetStreamState = resetStreamState;
+(window as any).resetStreamingCompletedFlag = resetStreamingCompletedFlag;
 
 // 获取DOM信息
 function getDOMInfo() {
@@ -368,21 +384,31 @@ function handleStopStreaming() {
 // 流式处理超时器
 let streamingTimeout: NodeJS.Timeout | null = null;
 
+// 流式处理状态标志
+let isStreamingCompleted = false;
+
 // 处理流式数据块
 function handleStreamChunk(data: any) {
   if (data.type === "chunk") {
+    // 如果流式处理已经完成，忽略后续的chunk消息
+    if (isStreamingCompleted) {
+      console.log("流式处理已完成，忽略后续chunk消息");
+      return;
+    }
+
     // 开始流式处理（只在第一次chunk时设置）
     if (!appState.isStreaming.value) {
+      // 重置流式完成标志，准备接收新的流式消息
+      isStreamingCompleted = false;
+      console.log("开始新的流式处理，重置完成标志");
+
       stateManager.startStreaming();
 
       // 设置超时保护，确保状态最终会被重置
       streamingTimeout = setTimeout(() => {
         if (appState.isStreaming.value || appState.isGenerating.value) {
           console.warn("流式处理超时，强制重置状态");
-          nextTick(() => {
-            appActions.setStreaming(false);
-            appActions.setGenerating(false);
-          });
+          stateManager.reset();
         }
         streamingTimeout = null;
       }, 30000); // 30秒超时
@@ -416,6 +442,8 @@ function handleStreamChunk(data: any) {
     }
   } else if (data.type === "done") {
     // 检测到流式完成信号
+    console.log("收到流式完成信号，设置完成标志");
+    isStreamingCompleted = true;
 
     // 清除超时器
     if (streamingTimeout) {
@@ -454,7 +482,7 @@ function handleStreamChunk(data: any) {
       // 使用 nextTick 确保在下一个事件循环中执行
       nextTick(async () => {
         await handleBrowserControlInstructions(data.fullResponse);
-        // 状态已经由stateManager.completeStreaming()重置，无需重复设置
+        // 注意：不要在这里重置状态，因为状态已经由stateManager.completeStreaming()重置
       });
     }
     // 状态已经由stateManager.completeStreaming()重置，无需重复设置
@@ -464,6 +492,9 @@ function handleStreamChunk(data: any) {
 // 处理流式错误
 function handleStreamError(data: any) {
   console.error("流式处理错误:", data.error);
+
+  // 重置完成标志
+  isStreamingCompleted = false;
 
   // 清除超时器
   if (streamingTimeout) {
@@ -598,12 +629,6 @@ async function handleBrowserControlInstructions(content: string) {
         console.error("重新获取页面内容失败:", error);
       }
     }
-
-    // 重置生成状态
-    nextTick(() => {
-      appActions.setGenerating(false);
-      appActions.setStreaming(false);
-    });
   } catch (error) {
     console.error("处理浏览器控制指令失败:", error);
 
@@ -615,12 +640,6 @@ async function handleBrowserControlInstructions(content: string) {
         }`,
         false
       );
-    });
-
-    // 重置生成状态
-    nextTick(() => {
-      appActions.setGenerating(false);
-      appActions.setStreaming(false);
     });
   }
 }

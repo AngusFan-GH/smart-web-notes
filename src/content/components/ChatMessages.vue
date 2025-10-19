@@ -58,20 +58,25 @@
               v-if="!message.isUser && message.thinkingContent"
               class="thinking-section"
             >
-              <div class="thinking-header" @click="toggleThinking(message.id)">
+              <div class="thinking-header">
                 <span class="thinking-title">
-                  <i
-                    :class="
-                      message.isThinkingCollapsed
-                        ? 'el-icon-arrow-right'
-                        : 'el-icon-arrow-down'
-                    "
-                  ></i>
+                  <i class="thinking-icon">🧠</i>
                   思考过程
                 </span>
-                <span class="thinking-toggle">
-                  {{ message.isThinkingCollapsed ? "展开" : "折叠" }}
-                </span>
+                <button
+                  class="thinking-toggle-btn"
+                  @click="toggleThinking(message.id)"
+                  :title="
+                    message.isThinkingCollapsed
+                      ? '展开思考过程'
+                      : '折叠思考过程'
+                  "
+                >
+                  <el-icon>
+                    <ArrowRight v-if="message.isThinkingCollapsed" />
+                    <ArrowDownIcon v-else />
+                  </el-icon>
+                </button>
               </div>
               <div
                 v-show="!message.isThinkingCollapsed"
@@ -137,8 +142,14 @@
 
 <script setup lang="ts">
 import { ref, watch, onMounted, nextTick } from "vue";
-import { ElButton, ElScrollbar, ElTooltip } from "element-plus";
-import { ArrowDown, DocumentCopy, Check } from "@element-plus/icons-vue";
+import { ElButton, ElScrollbar, ElTooltip, ElIcon } from "element-plus";
+import {
+  ArrowDown,
+  DocumentCopy,
+  Check,
+  ArrowRight,
+  ArrowDown as ArrowDownIcon,
+} from "@element-plus/icons-vue";
 import { renderMarkdown } from "../../shared/utils/markdown";
 import { appActions } from "../../shared/stores/appStore";
 
@@ -147,6 +158,8 @@ interface Message {
   content: string;
   isUser: boolean;
   timestamp: number;
+  thinkingContent?: string;
+  isThinkingCollapsed?: boolean;
 }
 
 interface Props {
@@ -732,41 +745,57 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 0;
-  cursor: pointer;
-  user-select: none;
-  transition: all 0.2s ease;
-  margin-bottom: 4px;
-}
-
-.thinking-header:hover {
-  opacity: 0.8;
+  padding: 6px 0;
+  margin-bottom: 6px;
+  border-bottom: 1px solid rgba(156, 163, 175, 0.1);
 }
 
 .thinking-title {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 500;
-  color: #9ca3af;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #6b7280;
   letter-spacing: 0.3px;
 }
 
-.thinking-title i {
+.thinking-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.thinking-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: rgba(156, 163, 175, 0.1);
+  border: 1px solid rgba(156, 163, 175, 0.2);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: #9ca3af;
+  font-size: 12px;
+  padding: 0;
+  margin: 0;
+}
+
+.thinking-toggle-btn:hover {
+  background: rgba(156, 163, 175, 0.2);
+  border-color: rgba(156, 163, 175, 0.3);
+  color: #6b7280;
+  transform: scale(1.05);
+}
+
+.thinking-toggle-btn:active {
+  transform: scale(0.95);
+}
+
+.thinking-toggle-btn .el-icon {
   font-size: 11px;
   transition: transform 0.2s ease;
-}
-
-.thinking-toggle {
-  font-size: 11px;
-  color: #9ca3af;
-  font-weight: 400;
-  transition: color 0.2s ease;
-}
-
-.thinking-header:hover .thinking-toggle {
-  color: #6b7280;
 }
 
 .thinking-content {
@@ -830,14 +859,24 @@ onMounted(async () => {
 /* 响应式设计 - 思考内容 */
 @media (max-width: 768px) {
   .thinking-header {
-    padding: 3px 0;
+    padding: 4px 0;
   }
 
   .thinking-title {
-    font-size: 11px;
+    font-size: 12px;
+    gap: 6px;
   }
 
-  .thinking-toggle {
+  .thinking-icon {
+    font-size: 13px;
+  }
+
+  .thinking-toggle-btn {
+    width: 22px;
+    height: 22px;
+  }
+
+  .thinking-toggle-btn .el-icon {
     font-size: 10px;
   }
 
@@ -848,15 +887,24 @@ onMounted(async () => {
 
 @media (max-width: 480px) {
   .thinking-header {
-    padding: 2px 0;
+    padding: 3px 0;
   }
 
   .thinking-title {
-    font-size: 10px;
-    gap: 4px;
+    font-size: 11px;
+    gap: 5px;
   }
 
-  .thinking-toggle {
+  .thinking-icon {
+    font-size: 12px;
+  }
+
+  .thinking-toggle-btn {
+    width: 20px;
+    height: 20px;
+  }
+
+  .thinking-toggle-btn .el-icon {
     font-size: 9px;
   }
 

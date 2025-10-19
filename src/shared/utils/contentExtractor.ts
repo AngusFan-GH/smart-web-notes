@@ -266,8 +266,8 @@ export class ContentExtractor {
     const text = element.textContent || "";
     const wordCount = this.countWords(text);
 
-    // 至少要有50个单词才认为是有效内容
-    return wordCount >= 50;
+    // 至少要有10个单词才认为是有效内容（降低要求）
+    return wordCount >= 10;
   }
 
   /**
@@ -860,8 +860,19 @@ export function parseWebContent(): string {
     extractImageAlt: false,
     extractLinkText: false,
     extractTableContent: false,
-    enableSmartContent: false,
+    enableSmartContent: true, // 启用智能内容识别
+    maxLength: 50000, // 增加最大长度限制
   });
+
+  // 如果智能提取失败，回退到简单提取
+  if (!result.text || result.text.trim().length === 0) {
+    console.warn("智能内容提取失败，回退到简单提取");
+    const body = document.body;
+    if (body) {
+      return body.innerText || body.textContent || "";
+    }
+  }
+
   return result.text;
 }
 

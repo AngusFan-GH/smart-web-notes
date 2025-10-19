@@ -5,6 +5,7 @@ import { EnhancedAISystem } from "./enhancedAISystem";
 import { appActions } from "../stores/appStore";
 import { BrowserControlService } from "./browserControlService";
 import { analyzeNetworkRequests } from "../utils/networkAnalyzer";
+import { htmlSanitizer } from "../utils/htmlSanitizer";
 
 export class UnifiedCommandExecutor {
   private static instance: UnifiedCommandExecutor;
@@ -172,14 +173,22 @@ export class UnifiedCommandExecutor {
   ): Promise<CommandExecutionResult> {
     const smartContext = await this.contextManager.buildSmartContext(input);
 
+    // 检查是否需要浏览器控制（需要完整HTML结构）
+    const needsBrowserControl = this.needsBrowserControl(input);
+
+    // 根据需求选择传递的内容
+    const pageContent = needsBrowserControl
+      ? this.buildFullHTMLContent(smartContext.pageContent)
+      : smartContext.pageContent.text;
+
     // 直接发送到background script进行流式处理
     return new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage(
+      (chrome as any).runtime.sendMessage(
         {
           action: "generateAnswer",
           data: {
             question: smartContext.question,
-            pageContent: smartContext.pageContent.text,
+            pageContent: pageContent,
             conversationHistory: smartContext.conversationHistory,
             url: smartContext.metadata.url,
             networkAnalysis: smartContext.pageContent.networkAnalysis,
@@ -187,9 +196,9 @@ export class UnifiedCommandExecutor {
             tabId: "current", // 添加标签页ID参数
           },
         },
-        (response) => {
-          if (chrome.runtime.lastError) {
-            reject(new Error(chrome.runtime.lastError.message));
+        (response: any) => {
+          if ((chrome as any).runtime.lastError) {
+            reject(new Error((chrome as any).runtime.lastError.message));
             return;
           }
 
@@ -216,14 +225,22 @@ export class UnifiedCommandExecutor {
   ): Promise<CommandExecutionResult> {
     const smartContext = await this.contextManager.buildSmartContext(input);
 
+    // 检查是否需要浏览器控制（需要完整HTML结构）
+    const needsBrowserControl = this.needsBrowserControl(input);
+
+    // 根据需求选择传递的内容
+    const pageContent = needsBrowserControl
+      ? this.buildFullHTMLContent(smartContext.pageContent)
+      : smartContext.pageContent.text;
+
     // 直接发送到background script进行流式处理
     return new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage(
+      (chrome as any).runtime.sendMessage(
         {
           action: "generateAnswer",
           data: {
             question: smartContext.question,
-            pageContent: smartContext.pageContent.text,
+            pageContent: pageContent,
             conversationHistory: smartContext.conversationHistory,
             url: smartContext.metadata.url,
             networkAnalysis: smartContext.pageContent.networkAnalysis,
@@ -231,9 +248,9 @@ export class UnifiedCommandExecutor {
             tabId: "current", // 添加标签页ID参数
           },
         },
-        (response) => {
-          if (chrome.runtime.lastError) {
-            reject(new Error(chrome.runtime.lastError.message));
+        (response: any) => {
+          if ((chrome as any).runtime.lastError) {
+            reject(new Error((chrome as any).runtime.lastError.message));
             return;
           }
 
@@ -500,6 +517,258 @@ ${commands
     };
     return (
       descriptions[commandName as keyof typeof descriptions] || "执行相关操作"
+    );
+  }
+
+  // 检查是否需要浏览器控制
+  private needsBrowserControl(input: string): boolean {
+    const browserControlKeywords = [
+      "隐藏",
+      "显示",
+      "移除",
+      "删除",
+      "修改",
+      "改变",
+      "调整",
+      "高亮",
+      "标记",
+      "hide",
+      "show",
+      "remove",
+      "delete",
+      "modify",
+      "change",
+      "adjust",
+      "highlight",
+      "点击",
+      "选择",
+      "操作",
+      "控制",
+      "样式",
+      "布局",
+      "元素",
+      "按钮",
+      "链接",
+      "click",
+      "select",
+      "operate",
+      "control",
+      "style",
+      "layout",
+      "element",
+      "button",
+      "link",
+    ];
+
+    const lowerInput = input.toLowerCase();
+    const needsControl = browserControlKeywords.some((keyword) =>
+      lowerInput.includes(keyword.toLowerCase())
+    );
+
+    console.log("🔍 检查浏览器控制需求:", {
+      input,
+      needsControl,
+      matchedKeywords: browserControlKeywords.filter((keyword) =>
+        lowerInput.includes(keyword.toLowerCase())
+      ),
+    });
+
+    return needsControl;
+  }
+
+  // 构建完整HTML内容
+  private buildFullHTMLContent(pageContent: any): string {
+    try {
+      // 动态计算各部分大小限制
+      const totalLimit = 90000; // 90KB总限制
+      const sizes = this.calculateOptimalSizes(totalLimit);
+
+      // 使用优化后的HTML清理，直接处理大小限制
+      const finalHTML = htmlSanitizer.getCleanPageHTML(sizes.maxHTMLSize);
+
+      // 限制DOM结构大小
+      let domStructure = pageContent.domStructure || {};
+      let domString = this.smartTruncateDOM(domStructure, sizes.maxDomSize);
+
+      const totalSize = finalHTML.length + domString.length;
+      console.log("📄 构建完整HTML内容:", {
+        htmlLength: finalHTML.length,
+        domLength: domString.length,
+        totalSize: totalSize,
+        htmlLimit: sizes.maxHTMLSize,
+        domLimit: sizes.maxDomSize,
+      });
+
+      // 构建包含完整HTML的内容（移除重复的文本内容）
+      return `**页面完整HTML结构：**
+\`\`\`html
+${finalHTML}
+\`\`\`
+
+**DOM结构信息：**
+${domString}`;
+    } catch (error) {
+      console.error("构建完整HTML内容失败:", error);
+      // 回退到原始文本内容
+      return pageContent.text;
+    }
+  }
+
+  // 动态计算各部分大小限制
+  private calculateOptimalSizes(totalLimit: number) {
+    const htmlRatio = 0.85; // HTML占85%
+    const domRatio = 0.15; // DOM占15%
+
+    return {
+      maxHTMLSize: Math.floor(totalLimit * htmlRatio),
+      maxDomSize: Math.floor(totalLimit * domRatio),
+    };
+  }
+
+  // 智能DOM结构截断
+  private smartTruncateDOM(domStructure: any, maxSize: number): string {
+    try {
+      // 基础简化结构
+      const simplified = {
+        title: domStructure.title || "",
+        url: domStructure.url || "",
+        mainElements: [],
+        totalElements: domStructure.totalElements || 0,
+        truncated: false,
+      };
+
+      // 处理主要元素
+      const mainElements = domStructure.mainElements || [];
+      let currentSize = JSON.stringify(simplified).length;
+      const maxElementSize = maxSize - currentSize - 200; // 预留200字符给其他信息
+
+      for (let i = 0; i < mainElements.length; i++) {
+        const element = mainElements[i];
+        const elementStr = JSON.stringify(element);
+
+        if (currentSize + elementStr.length > maxElementSize) {
+          simplified.truncated = true;
+          simplified.truncatedElements = mainElements.length - i;
+          break;
+        }
+
+        simplified.mainElements.push(element);
+        currentSize += elementStr.length;
+      }
+
+      const result = JSON.stringify(simplified, null, 2);
+
+      // 如果还是太大，进一步简化
+      if (result.length > maxSize) {
+        const ultraSimplified = {
+          title: simplified.title,
+          url: simplified.url,
+          elementCount: simplified.mainElements.length,
+          totalElements: simplified.totalElements,
+          truncated: true,
+          note: "DOM结构已简化以节省空间",
+        };
+        return JSON.stringify(ultraSimplified, null, 2);
+      }
+
+      return result;
+    } catch (error) {
+      console.warn("DOM结构截断失败:", error);
+      return JSON.stringify(
+        {
+          title: domStructure.title || "",
+          error: "DOM结构解析失败",
+          totalElements: domStructure.totalElements || 0,
+        },
+        null,
+        2
+      );
+    }
+  }
+
+  // 智能文本截断
+  private smartTruncateText(text: string, maxLength: number): string {
+    if (text.length <= maxLength) {
+      return text;
+    }
+
+    // 预留空间给省略号
+    const targetLength = maxLength - 100; // 预留100字符给省略号和其他信息
+
+    // 尝试在句号、问号、感叹号处截断
+    const sentenceEndings = /[。！？.!?]/g;
+    let lastSentenceEnd = -1;
+    let match;
+
+    while ((match = sentenceEndings.exec(text)) !== null) {
+      if (match.index <= targetLength) {
+        lastSentenceEnd = match.index + 1;
+      } else {
+        break;
+      }
+    }
+
+    // 如果找到合适的句子结尾，在那里截断
+    if (lastSentenceEnd > 0 && lastSentenceEnd <= targetLength) {
+      return (
+        text.substring(0, lastSentenceEnd) +
+        "\n\n... (内容已截断，显示前" +
+        Math.round(lastSentenceEnd / 1000) +
+        "k字符)"
+      );
+    }
+
+    // 尝试在段落分隔符处截断
+    const paragraphBreaks = /\n\s*\n/g;
+    let lastParagraphEnd = -1;
+    paragraphBreaks.lastIndex = 0;
+
+    while ((match = paragraphBreaks.exec(text)) !== null) {
+      if (match.index <= targetLength) {
+        lastParagraphEnd = match.index;
+      } else {
+        break;
+      }
+    }
+
+    if (lastParagraphEnd > 0 && lastParagraphEnd <= targetLength) {
+      return (
+        text.substring(0, lastParagraphEnd) +
+        "\n\n... (内容已截断，显示前" +
+        Math.round(lastParagraphEnd / 1000) +
+        "k字符)"
+      );
+    }
+
+    // 尝试在单词边界截断（适用于英文内容）
+    const wordBoundary = /\s+/g;
+    let lastWordEnd = -1;
+    wordBoundary.lastIndex = 0;
+
+    while ((match = wordBoundary.exec(text)) !== null) {
+      if (match.index <= targetLength) {
+        lastWordEnd = match.index;
+      } else {
+        break;
+      }
+    }
+
+    if (lastWordEnd > 0 && lastWordEnd <= targetLength) {
+      return (
+        text.substring(0, lastWordEnd) +
+        "\n\n... (内容已截断，显示前" +
+        Math.round(lastWordEnd / 1000) +
+        "k字符)"
+      );
+    }
+
+    // 最后回退到字符边界截断
+    const truncatedLength = Math.max(targetLength - 50, maxLength * 0.8); // 至少保留80%的内容
+    return (
+      text.substring(0, truncatedLength) +
+      "\n\n... (内容已截断，显示前" +
+      Math.round(truncatedLength / 1000) +
+      "k字符)"
     );
   }
 
