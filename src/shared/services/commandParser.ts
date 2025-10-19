@@ -35,6 +35,12 @@ export class CommandParser {
   // 解析用户输入
   parseCommand(input: string): CommandResult {
     const normalizedInput = this.normalizeInput(input);
+    console.log("🔍 CommandParser - 输入:", input);
+    console.log("🔍 CommandParser - 标准化后:", normalizedInput);
+    console.log(
+      "🔍 CommandParser - 注册的模式数量:",
+      this.commandPatterns.size
+    );
 
     // 按优先级排序匹配
     const sortedPatterns = Array.from(this.commandPatterns.values()).sort(
@@ -42,8 +48,16 @@ export class CommandParser {
     );
 
     for (const { pattern, handler } of sortedPatterns) {
+      console.log(
+        "🔍 CommandParser - 测试模式:",
+        pattern,
+        "处理器:",
+        handler.name
+      );
       const match = normalizedInput.match(pattern);
+      console.log("🔍 CommandParser - 匹配结果:", match);
       if (match) {
+        console.log("✅ CommandParser - 匹配成功:", handler.name);
         return {
           type: "direct",
           command: handler,
@@ -53,6 +67,7 @@ export class CommandParser {
       }
     }
 
+    console.log("❌ CommandParser - 未匹配到任何模式，返回AI处理");
     return {
       type: "ai",
       command: null,

@@ -25,8 +25,6 @@ for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
 
 // 确保容器存在后再挂载
 function mountApp() {
-  console.log("🔍 开始挂载Vue应用...");
-
   // 确保document.body存在
   if (!document.body) {
     console.error("❌ document.body不存在，无法挂载Vue应用");
@@ -85,7 +83,6 @@ function initApp() {
     // 使用多种方式确保DOM准备就绪
     const tryMount = () => {
       if (document.body) {
-        console.log("✅ document.body已准备，开始挂载");
         mountApp();
       } else {
         console.log("⏳ 继续等待document.body...");

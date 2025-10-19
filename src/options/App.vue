@@ -346,8 +346,17 @@ const statusMessage = ref("");
 const statusType = ref("");
 const scrollbarRef = ref();
 
+// 测试状态常量
+const TEST_STATUS = {
+  NONE: "none",
+  SUCCESS: "success",
+  ERROR: "error",
+} as const;
+
+type TestStatus = (typeof TEST_STATUS)[keyof typeof TEST_STATUS];
+
 // 测试状态：'none' | 'success' | 'error'
-const testStatus = ref("none");
+const testStatus = ref<TestStatus>(TEST_STATUS.NONE);
 let statusTimer: NodeJS.Timeout | null = null;
 
 // 系统提示词预设模板
@@ -548,7 +557,6 @@ async function saveSettings() {
       return;
     }
 
-    console.log("开始保存到chrome.storage.sync...");
     await chrome.storage.sync.set(settings);
     console.log("保存到chrome.storage.sync完成");
 
@@ -587,16 +595,16 @@ async function testConnection() {
   isLoading.value = true;
   statusMessage.value = "";
   statusType.value = "";
-  testStatus.value = "none";
+  testStatus.value = TEST_STATUS.NONE;
 
   try {
     // 测试API配置
     const result = await testApiConfig();
 
-    testStatus.value = "success";
+    testStatus.value = TEST_STATUS.SUCCESS;
     showStatus("API连接测试成功！", "success");
   } catch (error) {
-    testStatus.value = "error";
+    testStatus.value = TEST_STATUS.ERROR;
     showStatus(
       `测试失败：${error instanceof Error ? error.message : "未知错误"}`,
       "error"
@@ -611,7 +619,7 @@ function resetSettings() {
   Object.assign(settings, DEFAULT_SETTINGS);
   statusMessage.value = "";
   statusType.value = "";
-  testStatus.value = "none";
+  testStatus.value = TEST_STATUS.NONE;
 
   // 清除定时器
   if (statusTimer) {

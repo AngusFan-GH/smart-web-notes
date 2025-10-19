@@ -619,6 +619,9 @@ export class ContentExtractor {
       childrenCount: number;
     }> = [];
 
+    // 添加完整的HTML结构
+    const htmlStructure = this.getCompleteHTMLStructure();
+
     // 遍历所有有ID或class的元素，以及一些重要的无class元素
     const allElements = document.querySelectorAll(
       "*[id], *[class], main, article, section, header, footer, nav, aside"
@@ -770,7 +773,23 @@ export class ContentExtractor {
     return {
       elements: elements.slice(0, 200), // 增加到200个元素，提供更完整的页面结构
       commonSelectors,
+      htmlStructure, // 添加完整的HTML结构
     };
+  }
+
+  /**
+   * 获取完整的HTML结构
+   */
+  private getCompleteHTMLStructure(): string {
+    try {
+      const html = `<!DOCTYPE html>\n<html>\n<head>\n${document.head.outerHTML}\n</head>\n<body>\n${document.body.outerHTML}\n</body>\n</html>`;
+      console.log("📄 获取完整HTML结构 - 长度:", html.length);
+      console.log("📄 HTML结构前500字符:", html.substring(0, 500));
+      return html;
+    } catch (error) {
+      console.error("获取完整HTML结构失败:", error);
+      return "";
+    }
   }
 
   /**

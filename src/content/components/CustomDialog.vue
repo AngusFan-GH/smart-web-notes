@@ -91,7 +91,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted, computed, watch } from "vue";
+import {
+  ref,
+  reactive,
+  onMounted,
+  onUnmounted,
+  computed,
+  watch,
+  nextTick,
+} from "vue";
 import { appState, appActions } from "../../shared/stores/appStore";
 import { UnifiedCommandExecutor } from "../../shared/services/unifiedCommandExecutor";
 import { useContextStore } from "../../shared/stores/contextStore";
@@ -197,8 +205,6 @@ async function generateSuggestedQuestionsIfNeeded() {
   }
 
   try {
-    console.log("开始生成推荐问题...");
-
     // 设置加载状态
     isGeneratingSuggestedQuestions.value = true;
 
@@ -601,8 +607,6 @@ async function sendMessage() {
   const message = userInput.value.trim();
   if (!message || appState.isProcessing.value) return;
 
-  console.log("CustomDialog开始发送消息:", message);
-
   // 清空输入框
   userInput.value = "";
   commandSuggestions.value = [];
@@ -647,7 +651,7 @@ async function sendMessage() {
       errorStep(currentStep.id, "处理失败");
     }
 
-    // 使用新的错误处理机制
+    // 使用优化后的错误处理机制
     const errorInfo = handleError(error);
     const userMessage = getUserFriendlyMessage(error);
     const suggestedAction = getSuggestedAction(error);
@@ -665,7 +669,10 @@ async function sendMessage() {
 
     appActions.addMessage(errorMessage, false);
   } finally {
-    appActions.setGenerating(false);
+    nextTick(() => {
+      appActions.setGenerating(false);
+      appActions.setStreaming(false);
+    });
   }
 }
 
@@ -814,7 +821,6 @@ function stopDrag() {
 
 // 处理调整大小开始
 function handleResizeStart(direction: string, event: MouseEvent) {
-  console.log("开始调整大小，方向:", direction);
   event.stopPropagation();
   event.preventDefault(); // 防止默认行为
   isResizing = true;

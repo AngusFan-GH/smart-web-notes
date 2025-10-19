@@ -1,5 +1,5 @@
 import type { Settings, ApiRequest, StreamChunk } from "../types";
-import { generateSmartPrompt } from "../utils/promptManager";
+import { generateSmartPromptAsync } from "../utils/promptManager";
 
 export class ApiService {
   private static instance: ApiService;
@@ -107,7 +107,7 @@ export class ApiService {
       }
 
       // 生成智能提示词
-      const promptTemplate = generateSmartPrompt(
+      const promptTemplate = await generateSmartPromptAsync(
         question,
         pageContent,
         url || (typeof window !== "undefined" ? window.location.href : ""),
@@ -278,7 +278,16 @@ export class ApiService {
         fetchOptions.signal = abortController.signal;
       }
 
-      const response = await fetch(apiBase, fetchOptions);
+      // 确保apiBase是有效的URL
+      let validApiBase = apiBase;
+      try {
+        new URL(apiBase);
+      } catch (error) {
+        console.error("无效的API Base URL:", apiBase);
+        throw new Error(`无效的API Base URL: ${apiBase}`);
+      }
+
+      const response = await fetch(validApiBase, fetchOptions);
 
       if (!response.ok) {
         throw new Error(

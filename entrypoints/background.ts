@@ -4,6 +4,7 @@ import type {
   ChromeResponse,
   StreamChunk,
 } from "../src/shared/types";
+import { Interpreter } from "eval5";
 
 export default defineBackground(() => {
   console.log("Web Assistant Background Script Started");
@@ -56,22 +57,6 @@ export default defineBackground(() => {
 
         case "removeCSS":
           handleRemoveCSS(message.data, sendResponse);
-          break;
-
-        case "removeDOMElement":
-          handleRemoveDOMElement(message.data, sendResponse);
-          break;
-
-        case "addDOMElement":
-          handleAddDOMElement(message.data, sendResponse);
-          break;
-
-        case "modifyDOMElement":
-          handleModifyDOMElement(message.data, sendResponse);
-          break;
-
-        case "moveDOMElement":
-          handleMoveDOMElement(message.data, sendResponse);
           break;
 
         case "executeJavaScript":
@@ -578,250 +563,6 @@ export default defineBackground(() => {
     }
   }
 
-  // 移除DOM元素
-  async function handleRemoveDOMElement(
-    data: any,
-    sendResponse: (response: ChromeResponse) => void
-  ) {
-    try {
-      const { selector, reason } = data;
-
-      if (!selector) {
-        sendResponse({
-          success: false,
-          error: "选择器不能为空",
-        });
-        return;
-      }
-
-      // 获取当前活动标签页
-      const tabs = await chrome.tabs.query({
-        active: true,
-        currentWindow: true,
-      });
-
-      if (!tabs[0]?.id) {
-        sendResponse({
-          success: false,
-          error: "无法获取当前标签页",
-        });
-        return;
-      }
-
-      // 发送消息到content script执行DOM操作
-      chrome.tabs.sendMessage(
-        tabs[0].id,
-        {
-          action: "removeDOMElement",
-          data: { selector, reason },
-        },
-        (response) => {
-          if (chrome.runtime.lastError) {
-            sendResponse({
-              success: false,
-              error: chrome.runtime.lastError.message,
-            });
-            return;
-          }
-
-          sendResponse({
-            success: true,
-            data: response,
-          });
-        }
-      );
-    } catch (error) {
-      console.error("移除DOM元素失败:", error);
-      sendResponse({
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  // 添加DOM元素
-  async function handleAddDOMElement(
-    data: any,
-    sendResponse: (response: ChromeResponse) => void
-  ) {
-    try {
-      const { selector, tag, content, attributes, position, reason } = data;
-
-      if (!selector) {
-        sendResponse({
-          success: false,
-          error: "选择器不能为空",
-        });
-        return;
-      }
-
-      // 获取当前活动标签页
-      const tabs = await chrome.tabs.query({
-        active: true,
-        currentWindow: true,
-      });
-
-      if (!tabs[0]?.id) {
-        sendResponse({
-          success: false,
-          error: "无法获取当前标签页",
-        });
-        return;
-      }
-
-      // 发送消息到content script执行DOM操作
-      chrome.tabs.sendMessage(
-        tabs[0].id,
-        {
-          action: "addDOMElement",
-          data: { selector, tag, content, attributes, position, reason },
-        },
-        (response) => {
-          if (chrome.runtime.lastError) {
-            sendResponse({
-              success: false,
-              error: chrome.runtime.lastError.message,
-            });
-            return;
-          }
-
-          sendResponse({
-            success: true,
-            data: response,
-          });
-        }
-      );
-    } catch (error) {
-      console.error("添加DOM元素失败:", error);
-      sendResponse({
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  // 修改DOM元素
-  async function handleModifyDOMElement(
-    data: any,
-    sendResponse: (response: ChromeResponse) => void
-  ) {
-    try {
-      const { selector, content, attributes, reason } = data;
-
-      if (!selector) {
-        sendResponse({
-          success: false,
-          error: "选择器不能为空",
-        });
-        return;
-      }
-
-      // 获取当前活动标签页
-      const tabs = await chrome.tabs.query({
-        active: true,
-        currentWindow: true,
-      });
-
-      if (!tabs[0]?.id) {
-        sendResponse({
-          success: false,
-          error: "无法获取当前标签页",
-        });
-        return;
-      }
-
-      // 发送消息到content script执行DOM操作
-      chrome.tabs.sendMessage(
-        tabs[0].id,
-        {
-          action: "modifyDOMElement",
-          data: { selector, content, attributes, reason },
-        },
-        (response) => {
-          if (chrome.runtime.lastError) {
-            sendResponse({
-              success: false,
-              error: chrome.runtime.lastError.message,
-            });
-            return;
-          }
-
-          sendResponse({
-            success: true,
-            data: response,
-          });
-        }
-      );
-    } catch (error) {
-      console.error("修改DOM元素失败:", error);
-      sendResponse({
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  // 移动DOM元素
-  async function handleMoveDOMElement(
-    data: any,
-    sendResponse: (response: ChromeResponse) => void
-  ) {
-    try {
-      const { selector, targetSelector, position, reason } = data;
-
-      if (!selector || !targetSelector) {
-        sendResponse({
-          success: false,
-          error: "选择器和目标选择器不能为空",
-        });
-        return;
-      }
-
-      // 获取当前活动标签页
-      const tabs = await chrome.tabs.query({
-        active: true,
-        currentWindow: true,
-      });
-
-      if (!tabs[0]?.id) {
-        sendResponse({
-          success: false,
-          error: "无法获取当前标签页",
-        });
-        return;
-      }
-
-      // 发送消息到content script执行DOM操作
-      chrome.tabs.sendMessage(
-        tabs[0].id,
-        {
-          action: "moveDOMElement",
-          data: { selector, targetSelector, position, reason },
-        },
-        (response) => {
-          if (chrome.runtime.lastError) {
-            sendResponse({
-              success: false,
-              error: chrome.runtime.lastError.message,
-            });
-            return;
-          }
-
-          sendResponse({
-            success: true,
-            data: response,
-          });
-        }
-      );
-    } catch (error) {
-      console.error("移动DOM元素失败:", error);
-      sendResponse({
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
   // 执行JavaScript代码
   async function handleExecuteJavaScript(
     data: any,
@@ -853,58 +594,33 @@ export default defineBackground(() => {
         return;
       }
 
-      // 使用chrome.scripting.executeScript执行JavaScript
-      try {
-        // 创建一个函数来执行大模型生成的JavaScript代码
-        const executeUserCode = (code: string) => {
-          try {
-            // 直接执行用户代码，不使用Function构造函数
-            // 在页面上下文中直接执行代码
-            eval(code);
-
-            return {
-              success: true,
-              result: "JavaScript执行成功",
-              message: "JavaScript执行成功",
-            };
-          } catch (error) {
-            return {
+      // JavaScript执行现在由content script直接处理
+      // 这里只需要转发消息到content script
+      chrome.tabs.sendMessage(
+        tabs[0].id,
+        {
+          action: "executeJavaScript",
+          data: {
+            javascript: jsCode,
+            reason: data?.reason || "执行JavaScript代码",
+          },
+        },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            sendResponse({
               success: false,
-              error: error.message,
-              message: "JavaScript执行失败",
-            };
+              error: chrome.runtime.lastError.message,
+            });
+            return;
           }
-        };
 
-        const results = await chrome.scripting.executeScript({
-          target: { tabId: tabs[0].id },
-          func: executeUserCode,
-          args: [jsCode],
-        });
-
-        const executionResult = results[0]?.result;
-
-        if (executionResult?.success) {
           sendResponse({
-            success: true,
-            data: {
-              message: executionResult.message,
-              result: executionResult.result,
-            },
-          });
-        } else {
-          sendResponse({
-            success: false,
-            error: executionResult?.error || "JavaScript执行失败",
+            success: response?.success || false,
+            data: response?.data,
+            error: response?.error,
           });
         }
-      } catch (scriptError) {
-        console.error("Script execution error:", scriptError);
-        sendResponse({
-          success: false,
-          error: `JavaScript执行错误: ${scriptError.message}`,
-        });
-      }
+      );
     } catch (error) {
       console.error("执行JavaScript失败:", error);
       sendResponse({

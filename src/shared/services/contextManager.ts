@@ -76,7 +76,10 @@ export class ContextManager {
         msg.content.includes("成功") ||
         msg.content.includes("失败")
     );
-    const recentMessages = messages.slice(-10);
+    // 增加最近消息的数量，确保有足够的上下文
+    const recentMessages = messages.slice(
+      -Math.floor(this.maxConversationHistory * 0.8)
+    );
 
     const compressed = [
       ...systemMessages,
@@ -181,3 +184,6 @@ export class ContextManager {
     this.conversationCache = [];
   }
 }
+
+// 导出单例实例
+export const contextManager = new ContextManager();

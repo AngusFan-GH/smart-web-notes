@@ -1,6 +1,12 @@
 // 错误处理工具类
 export interface ErrorInfo {
-  type: "network" | "api" | "content" | "rateLimit" | "unknown";
+  type:
+    | "network"
+    | "api"
+    | "content"
+    | "rateLimit"
+    | "directCommand"
+    | "unknown";
   message: string;
   userMessage: string;
   action?: string;
@@ -23,6 +29,17 @@ export class ErrorHandler {
   public analyzeError(error: any): ErrorInfo {
     const errorMessage = error?.message || String(error);
     const errorCode = error?.code || error?.status;
+
+    // 直接命令错误 - 优先处理，直接显示具体错误信息
+    if (this.isDirectCommandError(error)) {
+      return {
+        type: "directCommand",
+        message: errorMessage,
+        userMessage: errorMessage, // 直接显示原始错误信息
+        action: this.getDirectCommandAction(errorMessage),
+        retryable: this.isDirectCommandRetryable(errorMessage),
+      };
+    }
 
     // 网络错误
     if (this.isNetworkError(error)) {
@@ -70,6 +87,59 @@ export class ErrorHandler {
       action: "重试",
       retryable: true,
     };
+  }
+
+  /**
+   * 检查是否为直接命令错误
+   */
+  private isDirectCommandError(error: any): boolean {
+    const errorMessage = error?.message || String(error);
+    const directCommandPatterns = [
+      "当前页面没有检测到",
+      "没有可重新拉取的GET端点",
+      "清空消息",
+      "撤销操作",
+      "获取页面内容",
+      "显示帮助",
+      "命令执行失败",
+    ];
+
+    return directCommandPatterns.some((pattern) =>
+      errorMessage.includes(pattern)
+    );
+  }
+
+  /**
+   * 获取直接命令的建议操作
+   */
+  private getDirectCommandAction(errorMessage: string): string | undefined {
+    if (errorMessage.includes("当前页面没有检测到")) {
+      return "等待页面加载完成或刷新页面";
+    }
+    if (errorMessage.includes("没有可重新拉取的GET端点")) {
+      return "等待页面加载更多内容或尝试其他操作";
+    }
+    if (errorMessage.includes("清空消息")) {
+      return "检查消息状态";
+    }
+    if (errorMessage.includes("撤销操作")) {
+      return "检查是否有可撤销的操作";
+    }
+    if (errorMessage.includes("获取页面内容")) {
+      return "刷新页面或选择其他内容区域";
+    }
+    if (errorMessage.includes("显示帮助")) {
+      return "检查命令格式";
+    }
+    return "重试";
+  }
+
+  /**
+   * 检查直接命令错误是否可重试
+   */
+  private isDirectCommandRetryable(errorMessage: string): boolean {
+    // 大部分直接命令错误都可以重试
+    return !errorMessage.includes("命令执行失败");
   }
 
   /**

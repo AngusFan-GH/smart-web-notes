@@ -20,11 +20,50 @@ import type { ChromeMessage, ChromeResponse } from "../shared/types";
 import { streamManager } from "../shared/utils/streamManager";
 import { completeStep, errorStep } from "../shared/utils/userFeedback";
 import { stateManager } from "../shared/utils/stateManager";
+import { getEvalInstance, transformCode } from "chrome-inject-eval";
 
 // 声明chrome类型
 declare const chrome: any;
 
 // 数学渲染器已集成，无需声明KaTeX类型
+
+// 使用chrome-inject-eval库创建eval实例
+const evil = getEvalInstance(window);
+
+// 执行JavaScript代码的函数
+function executeJavaScriptCode(code: string): {
+  success: boolean;
+  result?: any;
+  error?: string;
+} {
+  try {
+    console.log("原始JavaScript代码:", code);
+    console.log("代码长度:", code.length);
+
+    // 使用chrome-inject-eval库执行代码
+    const result = evil(code);
+    console.log("JavaScript执行结果:", result);
+
+    return {
+      success: true,
+      result: result || "JavaScript执行成功",
+    };
+  } catch (error) {
+    console.error("JavaScript执行错误:", error);
+    console.error("错误详情:", {
+      name: error instanceof Error ? error.name : "Unknown",
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+
+    return {
+      success: false,
+      error:
+        "JavaScript执行失败: " +
+        (error instanceof Error ? error.message : String(error)),
+    };
+  }
+}
 
 // 加载悬浮球状态
 async function loadFloatingBallState() {
@@ -48,8 +87,6 @@ async function loadFloatingBallState() {
 
 // 初始化
 onMounted(async () => {
-  console.log("App.vue mounted - 初始化开始");
-
   // 加载悬浮球状态
   await loadFloatingBallState();
 
@@ -101,6 +138,8 @@ async function loadSettings() {
 
     if (response.success) {
       appActions.setSettings(response.data);
+      // 同步设置到apiService
+      apiService.setSettings(response.data);
       console.log("设置加载完成:", response.data);
     } else {
       console.error("加载设置失败:", response.error);
@@ -173,26 +212,6 @@ function handleMessage(
       appActions.closeDialog();
       break;
 
-    case "removeDOMElement":
-      // 移除DOM元素
-      handleRemoveDOMElement(message.data, sendResponse);
-      break;
-
-    case "addDOMElement":
-      // 添加DOM元素
-      handleAddDOMElement(message.data, sendResponse);
-      break;
-
-    case "modifyDOMElement":
-      // 修改DOM元素
-      handleModifyDOMElement(message.data, sendResponse);
-      break;
-
-    case "moveDOMElement":
-      // 移动DOM元素
-      handleMoveDOMElement(message.data, sendResponse);
-      break;
-
     case "executeJavaScript":
       // 执行JavaScript代码
       handleExecuteJavaScript(message.data, sendResponse);
@@ -248,6 +267,13 @@ function handleMessage(
 // 重置流式状态
 function resetStreamState() {
   console.log("重置流式状态");
+
+  // 清除超时器
+  if (streamingTimeout) {
+    clearTimeout(streamingTimeout);
+    streamingTimeout = null;
+  }
+
   streamManager.abort();
   stateManager.reset();
 }
@@ -339,11 +365,28 @@ function handleStopStreaming() {
   resetStreamState();
 }
 
+// 流式处理超时器
+let streamingTimeout: NodeJS.Timeout | null = null;
+
 // 处理流式数据块
 function handleStreamChunk(data: any) {
   if (data.type === "chunk") {
-    // 开始流式处理
-    stateManager.startStreaming();
+    // 开始流式处理（只在第一次chunk时设置）
+    if (!appState.isStreaming.value) {
+      stateManager.startStreaming();
+
+      // 设置超时保护，确保状态最终会被重置
+      streamingTimeout = setTimeout(() => {
+        if (appState.isStreaming.value || appState.isGenerating.value) {
+          console.warn("流式处理超时，强制重置状态");
+          nextTick(() => {
+            appActions.setStreaming(false);
+            appActions.setGenerating(false);
+          });
+        }
+        streamingTimeout = null;
+      }, 30000); // 30秒超时
+    }
 
     // 使用流式管理器处理chunk
     streamManager.handleChunk(data);
@@ -353,20 +396,32 @@ function handleStreamChunk(data: any) {
       appState.messages.value.length === 0 ||
       appState.messages.value[appState.messages.value.length - 1].isUser
     ) {
-      appActions.addMessage("", false);
+      nextTick(() => {
+        appActions.addMessage("", false);
+      });
     }
 
     // 处理思考内容
     if (data.reasoningContent) {
-      appActions.updateLastMessageThinking(data.reasoningContent);
+      nextTick(() => {
+        appActions.updateLastMessageThinking(data.reasoningContent);
+      });
     }
 
     // 处理回答内容
     if (data.content) {
-      appActions.updateLastMessage(data.content);
+      nextTick(() => {
+        appActions.updateLastMessage(data.content);
+      });
     }
   } else if (data.type === "done") {
     // 检测到流式完成信号
+
+    // 清除超时器
+    if (streamingTimeout) {
+      clearTimeout(streamingTimeout);
+      streamingTimeout = null;
+    }
 
     // 完成流式处理
     stateManager.completeStreaming();
@@ -384,40 +439,37 @@ function handleStreamChunk(data: any) {
       if (!lastMessage.isUser && lastMessage.thinkingContent) {
         // 延迟一点时间再折叠，让用户看到思考过程
         setTimeout(() => {
-          appActions.toggleThinkingCollapse(lastMessage.id);
+          // 检查组件是否仍然存在
+          if (document.querySelector("#ai-assistant-content")) {
+            nextTick(() => {
+              appActions.toggleThinkingCollapse(lastMessage.id);
+            });
+          }
         }, 2000); // 2秒后自动折叠
       }
     }
 
     // 处理浏览器控制指令
     if (data.fullResponse) {
-      handleBrowserControlInstructions(data.fullResponse);
+      // 使用 nextTick 确保在下一个事件循环中执行
+      nextTick(async () => {
+        await handleBrowserControlInstructions(data.fullResponse);
+        // 状态已经由stateManager.completeStreaming()重置，无需重复设置
+      });
     }
-
-    // 直接设置状态确保立即生效
-    appActions.setStreaming(false);
-    appActions.setGenerating(false);
-
-    // 使用nextTick确保状态更新后DOM也更新
-    nextTick(() => {
-      // 强制重置状态，确保UI正确更新
-      appActions.setStreaming(false);
-      appActions.setGenerating(false);
-
-      // 延迟检查，如果状态仍然不正确则强制重置
-      setTimeout(() => {
-        if (appState.isStreaming.value || appState.isGenerating.value) {
-          appActions.setStreaming(false);
-          appActions.setGenerating(false);
-        }
-      }, 100);
-    });
+    // 状态已经由stateManager.completeStreaming()重置，无需重复设置
   }
 }
 
 // 处理流式错误
 function handleStreamError(data: any) {
   console.error("流式处理错误:", data.error);
+
+  // 清除超时器
+  if (streamingTimeout) {
+    clearTimeout(streamingTimeout);
+    streamingTimeout = null;
+  }
 
   // 停止流式处理
   stateManager.stopStreaming();
@@ -426,16 +478,17 @@ function handleStreamError(data: any) {
   errorStep("ai_conversation", `处理失败: ${data.error}`);
 
   // 添加错误消息
-  appActions.addMessage(`❌ 处理失败: ${data.error}`, false);
+  nextTick(() => {
+    appActions.addMessage(`❌ 处理失败: ${data.error}`, false);
+  });
 
-  // 重置状态
-  appActions.setStreaming(false);
-  appActions.setGenerating(false);
+  // 状态已经由stateManager.stopStreaming()重置，无需重复设置
 }
 
 import { parseWebContent as extractContent } from "../shared/utils/contentExtractor";
 import { promptManager } from "../shared/utils/promptManager";
 import { BrowserControlService } from "../shared/services/browserControlService";
+import { apiService } from "../shared/services/apiService";
 
 // 解析网页内容 - 使用优化后的提取器
 function parseWebContent(): string {
@@ -453,19 +506,17 @@ async function handleBrowserControlInstructions(content: string) {
       return;
     }
 
-    console.log("检测到浏览器控制指令，开始处理...");
-
     // 解析指令
     const instructions = promptManager.parseBrowserControlInstructions(content);
     if (instructions.length === 0) {
       console.log("未找到有效的浏览器控制指令");
-      return;
-    }
-
-    // 检查浏览器控制是否支持
-    if (!BrowserControlService.isSupported()) {
-      console.warn("浏览器控制功能不支持");
-      appActions.addMessage("⚠️ 浏览器控制功能在当前环境中不可用", false);
+      // 添加用户反馈
+      nextTick(() => {
+        appActions.addMessage(
+          "❌ 解析浏览器控制指令失败，请检查指令格式",
+          false
+        );
+      });
       return;
     }
 
@@ -473,7 +524,10 @@ async function handleBrowserControlInstructions(content: string) {
     const settings = await chrome.storage.sync.get(["enableBrowserControl"]);
     if (settings.enableBrowserControl === false) {
       console.log("用户已禁用浏览器控制功能");
-      appActions.addMessage("ℹ️ 浏览器控制功能已禁用，请在设置中启用", false);
+      // 使用 nextTick 确保在下一个事件循环中执行
+      nextTick(() => {
+        appActions.addMessage("ℹ️ 浏览器控制功能已禁用，请在设置中启用", false);
+      });
       return;
     }
 
@@ -503,10 +557,13 @@ async function handleBrowserControlInstructions(content: string) {
 
     // 添加操作结果到对话中
     if (results.length > 0) {
-      appActions.addMessage(
-        `🎛️ **浏览器控制操作结果**\n\n${results.join("\n")}`,
-        false
-      );
+      // 使用 nextTick 确保在下一个事件循环中执行
+      nextTick(() => {
+        appActions.addMessage(
+          `🎛️ **浏览器控制操作结果**\n\n${results.join("\n")}`,
+          false
+        );
+      });
 
       // 通知CustomDialog有活跃的浏览器控制操作
       window.dispatchEvent(
@@ -520,255 +577,50 @@ async function handleBrowserControlInstructions(content: string) {
       try {
         // 延迟一点时间，确保DOM变化已经生效
         setTimeout(async () => {
-          const { parseWebContent } = await import(
-            "../shared/utils/contentExtractor"
-          );
-          const newContent = parseWebContent();
-          console.log("页面内容已更新，新的DOM结构信息已准备就绪");
+          try {
+            const { parseWebContent } = await import(
+              "../shared/utils/contentExtractor"
+            );
+            const newContent = parseWebContent();
+            console.log("页面内容已更新，新的DOM结构信息已准备就绪");
 
-          // 可以在这里触发一个事件，通知其他组件页面内容已更新
-          window.dispatchEvent(
-            new CustomEvent("pageContentUpdated", {
-              detail: { content: newContent },
-            })
-          );
+            // 可以在这里触发一个事件，通知其他组件页面内容已更新
+            window.dispatchEvent(
+              new CustomEvent("pageContentUpdated", {
+                detail: { content: newContent },
+              })
+            );
+          } catch (error) {
+            console.error("重新获取页面内容失败:", error);
+          }
         }, 500); // 延迟500ms，确保DOM变化生效
       } catch (error) {
         console.error("重新获取页面内容失败:", error);
       }
     }
+
+    // 重置生成状态
+    nextTick(() => {
+      appActions.setGenerating(false);
+      appActions.setStreaming(false);
+    });
   } catch (error) {
     console.error("处理浏览器控制指令失败:", error);
-    appActions.addMessage(
-      `❌ 处理浏览器控制指令时出错: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-      false
-    );
-  }
-}
 
-// DOM操作处理函数
-function handleRemoveDOMElement(
-  data: any,
-  sendResponse: (response: any) => void
-) {
-  try {
-    const { selector, reason } = data;
-    console.log("移除DOM元素:", { selector, reason });
-
-    const elements = document.querySelectorAll(selector);
-    if (elements.length === 0) {
-      sendResponse({
-        success: false,
-        error: `未找到匹配的元素: ${selector}`,
-      });
-      return;
-    }
-
-    let removedCount = 0;
-    elements.forEach((element) => {
-      element.remove();
-      removedCount++;
+    // 使用 nextTick 确保在下一个事件循环中执行
+    nextTick(() => {
+      appActions.addMessage(
+        `❌ 处理浏览器控制指令时出错: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        false
+      );
     });
 
-    sendResponse({
-      success: true,
-      data: {
-        message: `已移除 ${removedCount} 个元素`,
-        removedCount,
-        selector,
-      },
-    });
-  } catch (error) {
-    console.error("移除DOM元素失败:", error);
-    sendResponse({
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
-}
-
-function handleAddDOMElement(data: any, sendResponse: (response: any) => void) {
-  try {
-    const { selector, tag, content, attributes, position, reason } = data;
-    console.log("添加DOM元素:", { selector, tag, content, position, reason });
-
-    const targetElements = document.querySelectorAll(selector);
-    if (targetElements.length === 0) {
-      sendResponse({
-        success: false,
-        error: `未找到目标元素: ${selector}`,
-      });
-      return;
-    }
-
-    let addedCount = 0;
-    targetElements.forEach((targetElement) => {
-      const newElement = document.createElement(tag || "div");
-
-      if (content) {
-        newElement.textContent = content;
-      }
-
-      if (attributes) {
-        Object.entries(attributes).forEach(([key, value]) => {
-          newElement.setAttribute(key, value as string);
-        });
-      }
-
-      switch (position) {
-        case "before":
-          targetElement.parentNode?.insertBefore(newElement, targetElement);
-          break;
-        case "after":
-          targetElement.parentNode?.insertBefore(
-            newElement,
-            targetElement.nextSibling
-          );
-          break;
-        case "inside":
-        default:
-          targetElement.appendChild(newElement);
-          break;
-      }
-
-      addedCount++;
-    });
-
-    sendResponse({
-      success: true,
-      data: {
-        message: `已添加 ${addedCount} 个元素`,
-        addedCount,
-        selector,
-        tag,
-      },
-    });
-  } catch (error) {
-    console.error("添加DOM元素失败:", error);
-    sendResponse({
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
-}
-
-function handleModifyDOMElement(
-  data: any,
-  sendResponse: (response: any) => void
-) {
-  try {
-    const { selector, content, attributes, reason } = data;
-    console.log("修改DOM元素:", { selector, content, attributes, reason });
-
-    const elements = document.querySelectorAll(selector);
-    if (elements.length === 0) {
-      sendResponse({
-        success: false,
-        error: `未找到匹配的元素: ${selector}`,
-      });
-      return;
-    }
-
-    let modifiedCount = 0;
-    elements.forEach((element) => {
-      if (content !== undefined) {
-        element.textContent = content;
-      }
-
-      if (attributes) {
-        Object.entries(attributes).forEach(([key, value]) => {
-          element.setAttribute(key, value as string);
-        });
-      }
-
-      modifiedCount++;
-    });
-
-    sendResponse({
-      success: true,
-      data: {
-        message: `已修改 ${modifiedCount} 个元素`,
-        modifiedCount,
-        selector,
-      },
-    });
-  } catch (error) {
-    console.error("修改DOM元素失败:", error);
-    sendResponse({
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
-}
-
-function handleMoveDOMElement(
-  data: any,
-  sendResponse: (response: any) => void
-) {
-  try {
-    const { selector, targetSelector, position, reason } = data;
-    console.log("移动DOM元素:", { selector, targetSelector, position, reason });
-
-    const sourceElements = document.querySelectorAll(selector);
-    const targetElements = document.querySelectorAll(targetSelector);
-
-    if (sourceElements.length === 0) {
-      sendResponse({
-        success: false,
-        error: `未找到源元素: ${selector}`,
-      });
-      return;
-    }
-
-    if (targetElements.length === 0) {
-      sendResponse({
-        success: false,
-        error: `未找到目标元素: ${targetSelector}`,
-      });
-      return;
-    }
-
-    let movedCount = 0;
-    sourceElements.forEach((sourceElement) => {
-      targetElements.forEach((targetElement) => {
-        switch (position) {
-          case "before":
-            targetElement.parentNode?.insertBefore(
-              sourceElement,
-              targetElement
-            );
-            break;
-          case "after":
-            targetElement.parentNode?.insertBefore(
-              sourceElement,
-              targetElement.nextSibling
-            );
-            break;
-          case "inside":
-          default:
-            targetElement.appendChild(sourceElement);
-            break;
-        }
-        movedCount++;
-      });
-    });
-
-    sendResponse({
-      success: true,
-      data: {
-        message: `已移动 ${movedCount} 个元素`,
-        movedCount,
-        selector,
-        targetSelector,
-      },
-    });
-  } catch (error) {
-    console.error("移动DOM元素失败:", error);
-    sendResponse({
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
+    // 重置生成状态
+    nextTick(() => {
+      appActions.setGenerating(false);
+      appActions.setStreaming(false);
     });
   }
 }
@@ -789,45 +641,31 @@ function handleExecuteJavaScript(
       return;
     }
 
-    // 通过chrome.scripting.executeScript在页面上下文中执行JavaScript
+    // 使用本地的eval5解释器执行JavaScript代码
     try {
-      // 发送消息到background script执行JavaScript
-      chrome.runtime.sendMessage(
-        {
-          action: "executeJavaScript",
+      const result = executeJavaScriptCode(javascript);
+
+      if (result.success) {
+        console.log("JavaScript执行成功:", result.result);
+        sendResponse({
+          success: true,
           data: {
-            code: javascript,
-            reason: reason,
+            message: "操作完成",
+            result: result.result,
           },
-        },
-        (response) => {
-          if (chrome.runtime.lastError) {
-            console.error("JavaScript执行错误:", chrome.runtime.lastError);
-            sendResponse({
-              success: false,
-              error: `JavaScript执行错误: ${chrome.runtime.lastError.message}`,
-            });
-          } else if (response && response.success) {
-            sendResponse({
-              success: true,
-              data: {
-                message: "JavaScript执行成功",
-                result: response.result,
-              },
-            });
-          } else {
-            sendResponse({
-              success: false,
-              error: response?.error || "JavaScript执行失败",
-            });
-          }
-        }
-      );
-    } catch (jsError) {
-      console.error("JavaScript执行错误:", jsError);
+        });
+      } else {
+        console.error("JavaScript执行失败:", result.error);
+        sendResponse({
+          success: false,
+          error: result.error || "JavaScript执行失败",
+        });
+      }
+    } catch (error) {
+      console.error("JavaScript执行异常:", error);
       sendResponse({
         success: false,
-        error: `JavaScript执行错误: ${jsError.message}`,
+        error: error instanceof Error ? error.message : String(error),
       });
     }
   } catch (error) {

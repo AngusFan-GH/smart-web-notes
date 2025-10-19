@@ -1,5 +1,6 @@
 import { reactive, computed } from "vue";
 import type { Message } from "../types";
+import { contextManager } from "../services/contextManager";
 
 // 应用状态
 interface AppState {
@@ -77,6 +78,9 @@ export const appActions = {
       timestamp: Date.now(),
     };
     state.messages.push(message);
+
+    // 更新对话缓存，用于多轮对话上下文
+    this.updateConversationCache();
   },
 
   updateLastMessage(content: string) {
@@ -87,6 +91,9 @@ export const appActions = {
         // 直接修改对象属性，Vue 会自动追踪响应式变化
         // 类似 newme-ds: answerObj.value.content = answerObj.value.content + content
         lastMessage.content = lastMessage.content + content;
+
+        // 更新对话缓存，确保上下文传递
+        this.updateConversationCache();
       }
     }
   },
@@ -107,6 +114,9 @@ export const appActions = {
         if (lastMessage.isThinkingCollapsed === undefined) {
           lastMessage.isThinkingCollapsed = false;
         }
+
+        // 更新对话缓存，确保上下文传递
+        this.updateConversationCache();
       }
     }
   },
@@ -116,6 +126,15 @@ export const appActions = {
     if (message && !message.isUser) {
       message.isThinkingCollapsed = !message.isThinkingCollapsed;
     }
+  },
+
+  // 更新对话缓存，用于多轮对话上下文
+  updateConversationCache() {
+    const conversationHistory = state.messages.map((msg) => ({
+      role: msg.isUser ? "user" : "assistant",
+      content: msg.content,
+    }));
+    contextManager.updateConversationCache(conversationHistory);
   },
 
   clearMessages() {

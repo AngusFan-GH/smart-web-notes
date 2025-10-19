@@ -1,4 +1,9 @@
 // 智能提示词管理器
+import {
+  intentRecognitionService,
+  type IntentRecognitionResult,
+} from "../services/intentRecognitionService";
+
 export interface PromptContext {
   contentType:
     | "news"
@@ -14,6 +19,7 @@ export interface PromptContext {
     | "analysis"
     | "explanation"
     | "comparison"
+    | "browser_control"
     | "general";
   contentLength: "short" | "medium" | "long";
   hasImages: boolean;
@@ -139,48 +145,27 @@ export class PromptManager {
   }
 
   /**
-   * 分析用户意图
+   * 分析用户意图（智能识别）
    */
-  public analyzeUserIntent(question: string): PromptContext["userIntent"] {
-    const questionLower = question.toLowerCase();
+  public async analyzeUserIntent(
+    question: string,
+    context?: string,
+    url?: string
+  ): Promise<PromptContext["userIntent"]> {
+    try {
+      const result = await intentRecognitionService.recognizeIntent({
+        question,
+        context,
+        url,
+      });
 
-    if (
-      questionLower.includes("总结") ||
-      questionLower.includes("概括") ||
-      questionLower.includes("要点") ||
-      questionLower.includes("摘要")
-    ) {
-      return "summary";
+      console.log("是否需要完整HTML:", result.needsFullHTML);
+
+      return result.intent as PromptContext["userIntent"];
+    } catch (error) {
+      console.error("意图识别失败，使用默认意图:", error);
+      return "question";
     }
-
-    if (
-      questionLower.includes("分析") ||
-      questionLower.includes("解释") ||
-      questionLower.includes("为什么") ||
-      questionLower.includes("如何")
-    ) {
-      return "analysis";
-    }
-
-    if (
-      questionLower.includes("比较") ||
-      questionLower.includes("对比") ||
-      questionLower.includes("区别") ||
-      questionLower.includes("差异")
-    ) {
-      return "comparison";
-    }
-
-    if (
-      questionLower.includes("什么是") ||
-      questionLower.includes("定义") ||
-      questionLower.includes("含义") ||
-      questionLower.includes("概念")
-    ) {
-      return "explanation";
-    }
-
-    return "question";
   }
 
   /**
@@ -202,17 +187,21 @@ export class PromptManager {
   }
 
   /**
-   * 生成智能提示词
+   * 生成智能提示词（异步版本）
    */
-  public generatePrompt(
+  public async generatePrompt(
     question: string,
     content: string,
     url: string,
     networkAnalysis?: any,
-    domStructure?: any
-  ): PromptTemplate {
+    domStructure?: any,
+    conversationHistory?: Array<{
+      role: "user" | "assistant";
+      content: string;
+    }>
+  ): Promise<PromptTemplate> {
     const contentType = this.analyzeContentType(content, url);
-    const userIntent = this.analyzeUserIntent(question);
+    const userIntent = await this.analyzeUserIntent(question, content, url);
     const features = this.analyzeContentFeatures(content);
 
     const context: PromptContext = {
@@ -232,7 +221,8 @@ export class PromptManager {
       question,
       content,
       networkAnalysis,
-      domStructure
+      domStructure,
+      conversationHistory
     );
   }
 
@@ -244,7 +234,11 @@ export class PromptManager {
     question: string,
     content: string,
     networkAnalysis?: any,
-    domStructure?: any
+    domStructure?: any,
+    conversationHistory?: Array<{
+      role: "user" | "assistant";
+      content: string;
+    }>
   ): PromptTemplate {
     const systemPrompt = this.buildSystemPrompt(context);
     const userPrompt = this.buildUserPrompt(
@@ -252,7 +246,8 @@ export class PromptManager {
       question,
       content,
       networkAnalysis,
-      domStructure
+      domStructure,
+      conversationHistory
     );
 
     return {
@@ -297,31 +292,227 @@ export class PromptManager {
 - 高亮重要内容（如"高亮标题"、"标记重点"）
 - 控制页面布局（如"隐藏侧边栏"、"调整布局"）
 
+🚨 **核心规则：必须基于实际HTML结构生成代码！**
+
+⚠️ **严格禁止**：
+- 使用硬编码的class名称（如 \`.bili-feed4-layout\`）
+- 使用通配符选择器（\`document.querySelectorAll('*')\`）
+- 使用宽泛的标签选择器（\`div\`、\`span\`、\`a\`等）
+- 猜测或假设页面结构
+
+✅ **必须遵循**：
+- 仔细分析提供的HTML结构
+- 使用实际存在的class和id
+- 基于文本内容匹配（\`[class*="设置"]\`、\`[id*="设置"]\`）
+- 验证选择器在HTML中确实存在
+
+**正确示例**：
+
+❌ 错误做法（硬编码class）：
+\`\`\`javascript
+document.querySelector('.bili-feed4-layout').style.marginTop = '0';
+\`\`\`
+
+❌ 错误做法（通配符选择器）：
+\`\`\`javascript
+document.querySelectorAll('*').forEach(el => {
+  if (el.textContent && el.textContent.includes('设置')) {
+    el.style.backgroundColor = 'yellow';
+  }
+});
+\`\`\`
+
+✅ 正确做法（基于实际HTML结构）：
+\`\`\`javascript
+// 高亮包含"设置"文本的元素
+document.querySelectorAll('[class*="设置"], [id*="设置"]').forEach(el => {
+  el.style.backgroundColor = 'yellow';
+  el.style.border = '2px solid orange';
+});
+
+// 或者基于实际class名称
+const settingElements = document.querySelectorAll('.setting-item, .config-button, .settings-link');
+settingElements.forEach(el => {
+  el.style.backgroundColor = 'yellow';
+});
+\`\`\`
+
+### 强制验证步骤
+
+在生成任何JavaScript代码前，必须完成以下步骤：
+
+1. **分析HTML结构**：仔细查看提供的HTML，找到包含目标文本的实际元素
+2. **提取真实属性**：记录实际的class、id、标签名等属性
+3. **构建精确选择器**：基于实际属性构建选择器
+4. **验证选择器**：确保选择器在HTML中确实存在
+
 ### 浏览器控制指令格式
 **仅在用户明确请求浏览器操作时使用：**
 
 \`\`\`browser-control
 {
-  "type": "hide|show|style|remove|highlight|add|modify|move|execute_js",
-  "selector": "CSS选择器（execute_js类型可选）",
-  "css": "自定义CSS样式（仅style类型需要）",
-  "reason": "操作原因说明",
-  "content": "内容（add/modify类型需要）",
-  "tag": "标签名（add类型需要）",
-  "attributes": {"属性名": "属性值"}（add/modify类型需要）,
-  "targetSelector": "目标选择器（move类型需要）",
-  "position": "位置：before|after|inside（add/move类型需要）",
-  "javascript": "JavaScript代码（execute_js类型需要）",
-  "method": "推荐方法：css|dom|javascript"
+  "type": "execute_js",
+  "javascript": "要执行的JavaScript代码",
+  "reason": "操作原因说明"
 }
 \`\`\`
 
-### 常用CSS选择器示例
-- 广告：\`.ad, .advertisement, [class*="ad-"], [id*="ad-"]\`
-- 弹窗：\`.modal, .popup, .overlay, [class*="popup"]\`
-- 侧边栏：\`.sidebar, .aside, [class*="sidebar"]\`
-- 导航：\`.nav, .navigation, [class*="nav"]\`
-- 页脚：\`footer, .footer, [class*="footer"]\`
+### DOM元素分析框架
+**在生成JavaScript代码前，必须按照以下通用框架进行DOM分析：**
+
+**核心原则：基于实际DOM结构，验证每个选择器的有效性**
+
+#### 分析流程
+
+1. **目标元素定位**：
+   - 在提供的HTML结构中定位包含目标内容的确切元素
+   - 提取该元素的完整DOM结构
+   - 记录元素的层级关系和上下文
+
+2. **元素属性提取**：
+   - 标签类型：\`<tagName>\`
+   - 类名列表：\`class="value1 value2"\`
+   - 标识符：\`id="value"\`
+   - 属性集合：\`attr="value"\`（包括data-*、aria-*等）
+
+3. **选择器有效性验证**：
+   - 验证每个CSS选择器在提供的HTML中确实存在
+   - 确保选择器语法正确且可执行
+   - 避免使用不存在的属性或类名
+
+4. **最优选择器构建**：
+   - 基于实际存在的属性构建选择器
+   - 优先选择特异性高且稳定的属性
+   - 确保选择器能够精确定位目标元素
+
+2. **查找目标元素的正确方法**：
+   - 在HTML结构中搜索包含目标文本的确切元素
+   - 查看该元素的实际标签名（如 \`<a>\`、\`<div>\`、\`<span>\`）
+   - 查看该元素的实际class和id属性
+   - 查看该元素的父级容器结构
+
+3. **分析元素特征**：
+   - 记录元素的实际标签名：\`<a>\`、\`<div>\`、\`<span>\` 等
+   - 记录元素的实际class：如 \`class="video-title"\`、\`class="post-link"\`
+   - 记录元素的实际id：如 \`id="video-123"\`
+   - 记录元素的实际属性：如 \`href="..."\`、\`data-id="..."\`
+
+4. **选择器验证**：
+   - 确保选择器在提供的HTML结构中确实存在
+   - 如果HTML中没有 \`.title-text\`，使用实际存在的class
+   - 如果HTML中没有 \`#video-title\`，使用实际存在的id
+   - 优先使用最具体且确实存在的选择器
+
+5. **示例分析过程**:
+   \`\`\`
+   用户要求: 高亮包含"在膝盖上钻洞"的链接
+   
+   实际HTML结构:
+   <a href="https://www.bilibili.com/video/BV1MoW7zrEsc" 
+      target="_blank" 
+      data-spmid="333.1007" 
+      data-mod="tianma.2-1-3" 
+      data-idx="click">
+      在膝盖上钻洞？我们拍下了骨科手术全过程！
+   </a>
+   
+   分析结果:
+   - 目标元素: <a> 标签
+   - 实际class: 无
+   - 实际id: 无
+   - 实际属性: href, target, data-spmid, data-mod, data-idx
+   - 文本内容: "在膝盖上钻洞？我们拍下了骨科手术全过程！"
+   
+   正确选择器: a[href*="bilibili.com"] 或 a[data-spmid="333.1007"]
+   错误选择器: .title-text (HTML中不存在)
+   \`\`\`
+
+#### 选择器设计原则
+
+1. **精确性原则**：
+   - 避免使用通配符选择器（\`*\`）
+   - 避免使用过于宽泛的标签选择器
+   - 优先使用具有高特异性的选择器
+
+2. **有效性原则**：
+   - 确保选择器在目标DOM中确实存在
+   - 验证选择器语法正确性
+   - 测试选择器能够准确定位目标元素
+
+3. **稳定性原则**：
+   - 优先选择结构稳定的属性（如id、data-*）
+   - 避免依赖可能变化的类名
+   - 考虑选择器的长期可维护性
+
+4. **安全性原则**：
+   - 在操作前验证元素存在性
+   - 避免影响非目标元素
+   - 使用最小化影响范围的选择器
+
+#### 代码实现模式
+
+**推荐模式**：
+\`\`\`javascript
+// 模式1：精确选择器 + 存在性验证
+const targetElement = document.querySelector('[specific-attribute="value"]');
+if (targetElement) {
+  // 执行操作
+}
+
+// 模式2：容器选择器 + 内容过滤
+const containers = document.querySelectorAll('.container-class');
+containers.forEach(container => {
+  if (container.textContent.includes('target-text')) {
+    // 执行操作
+  }
+});
+
+// 模式3：属性选择器 + 文本匹配
+const elements = document.querySelectorAll('[data-type="specific"]');
+elements.forEach(el => {
+  if (el.textContent.match(/pattern/)) {
+    // 执行操作
+  }
+});
+\`\`\`
+
+**CSS选择器语法要求**：
+- 在JavaScript字符串中，CSS选择器必须使用双引号
+- 属性选择器内部使用单引号：\`[class*='hotsearch']\`
+- 避免在CSS选择器中使用反斜杠转义
+- 复杂选择器建议拆分为多个简单选择器
+
+**语法错误示例**：
+❌ 错误语法：
+\`\`\`javascript
+// 错误：在JavaScript字符串中混用引号
+document.querySelectorAll('.s-hotsearch-title .hot-title .title-text, [class*='hotsearch'] span, [class*='hot-title']');
+\`\`\`
+
+✅ 正确语法：
+\`\`\`javascript
+// 正确：使用双引号包围整个选择器，内部属性选择器使用单引号
+document.querySelectorAll(".s-hotsearch-title .hot-title .title-text, [class*='hotsearch'] span, [class*='hot-title']");
+\`\`\`
+
+**避免模式**：
+\`\`\`javascript
+// ❌ 避免：通配符选择器
+document.querySelectorAll('*').forEach(el => { ... });
+
+// ❌ 避免：宽泛标签选择器
+document.querySelectorAll('div').forEach(el => { ... });
+
+// ❌ 避免：未验证的选择器
+document.querySelector('.non-existent-class').style.display = 'none';
+\`\`\`
+
+4. **常用CSS选择器示例**：
+   - 广告：\`.ad, .advertisement, [class*="ad-"], [id*="ad-"]\`
+   - 弹窗：\`.modal, .popup, .overlay, [class*="popup"]\`
+   - 侧边栏：\`.sidebar, .aside, [class*="sidebar"]\`
+   - 导航：\`.nav, .navigation, [class*="nav"]\`
+   - 页脚：\`footer, .footer, [class*="footer"]\`
 
 ### 选择器注意事项
 **重要：避免使用不兼容的选择器！**
@@ -336,67 +527,149 @@ export class PromptManager {
 - ✅ 使用 \`element:first-child\` 和 \`element:last-child\`
 - ✅ 使用 \`element:not(.class)\` 排除特定class的元素
 
-### 文本匹配替代方案
-**当需要匹配包含特定文本的元素时：**
-- 使用 \`[title*="文本"]\` 而不是 \`:contains("文本")\`
-- 使用 \`[aria-label*="文本"]\` 匹配无障碍标签
-- 使用 \`[data-*="文本"]\` 匹配自定义数据属性
-- 使用 \`[class*="关键词"]\` 匹配class名称
-- 如果元素没有相关属性，使用父级选择器 + 位置选择器
+### 文本匹配精确方案
+**当需要匹配包含特定文本的元素时，必须使用精确的方法：**
 
-### 特殊情况处理
-**对于包含特定文本的元素，如果无法使用属性选择器：**
-1. 首先尝试使用元素的class或ID
-2. 如果元素有特定的class（如 \`.tts-b-hl\`），使用该class
-3. 结合父级选择器来缩小范围
-4. 使用多个选择器组合，用逗号分隔
+1. **优先使用属性选择器**：
+   - 使用 \`[title*="文本"]\` 而不是 \`:contains("文本")\`
+   - 使用 \`[aria-label*="文本"]\` 匹配无障碍标签
+   - 使用 \`[data-*="文本"]\` 匹配自定义数据属性
 
-**文本匹配策略：**
-- 如果元素有独特的class，直接使用class选择器
-- 如果元素有ID，使用ID选择器
-- 如果元素有特定的属性值，使用属性选择器
-- 如果以上都不适用，使用JavaScript方法进行文本匹配
+2. **使用具体的容器选择器**：
+   - 先找到包含目标文本的容器元素（如 \`.video-item\`, \`.post-item\`）
+   - 然后在这些容器内查找文本
+   - 示例：\`document.querySelectorAll('.video-item').forEach(item => { ... })\`
 
-**示例：**
-- 不要使用：\`span:contains("一见")\` 或 \`a[href*="一见"]\`
-- 应该使用：\`.tts-b-hl\` 或 \`span.tts-b-hl\`
-- 或者使用JavaScript：\`document.querySelectorAll('*').forEach(el => { if(el.textContent && el.textContent.includes('一见')) { el.style.border = '2px solid blue'; } });\`
+3. **绝对禁止的宽泛文本匹配**：
+   - ❌ 不要使用 \`document.querySelectorAll('*')\` 然后检查文本
+   - ❌ 不要使用 \`document.querySelectorAll('div')\` 然后检查文本
+   - ❌ 不要使用 \`document.querySelectorAll('span')\` 然后检查文本
+
+4. **正确的文本匹配流程**:
+   \`\`\`
+   1. 分析HTML结构，找到包含目标文本的确切元素
+   2. 记录该元素的实际标签名、class、id和属性
+   3. 基于实际存在的属性构建选择器
+   4. 验证选择器在HTML结构中确实存在
+   5. 生成基于实际HTML结构的JavaScript代码
+   \`\`\`
+
+#### 分析验证模板
+
+**在生成代码前，必须完成以下分析**：
+
+\`\`\`
+【DOM分析报告】
+
+目标: [用户需求]
+定位元素: [目标元素的完整HTML]
+元素属性: 
+  - 标签: <tag>
+  - 类名: [class列表]
+  - ID: [id值]
+  - 属性: [其他属性列表]
+
+选择器设计:
+  - 候选选择器: [基于实际属性的选择器]
+  - 验证结果: [选择器在DOM中是否存在]
+  - 最终选择器: [确认的选择器]
+  - 选择依据: [基于哪个实际属性]
+  - 通配符检查: [确认未使用 *、div、span、a、p 等宽泛选择器]
+  - 语法检查: [确认使用双引号包围选择器，内部属性使用单引号]
+  - 安全检查: [确认不会影响Vue组件，不会使用通配符选择器]
+  - 精确性检查: [确认选择器基于实际HTML结构，具有足够的精确性]
+\`\`\`
+
+#### 验证要求
+
+- 完成DOM分析报告
+- 验证选择器在目标DOM中存在
+- 确保选择器语法正确
+- 基于实际属性构建选择器
+- **强制检查**：绝对不允许使用 \`document.querySelectorAll('*')\`
+- **强制检查**：绝对不允许使用宽泛的标签选择器（div、span、a、p等）
+- **强制检查**：必须基于实际HTML结构生成精确选择器
+- **强制检查**：选择器必须具有足够的精确性，避免影响其他元素
+
+#### 文本匹配策略
+
+当需要匹配包含特定文本的元素时：
+
+1. **优先使用属性选择器**：
+   - \`[title*="text"]\`
+   - \`[aria-label*="text"]\`
+   - \`[data-*="text"]\`
+
+2. **使用容器选择器**：
+   - 先定位包含文本的容器元素
+   - 在容器内进行文本匹配
+   - 避免使用通配符选择器
+
+3. **JavaScript文本匹配**：
+   - 仅在无法使用CSS选择器时使用
+   - 必须配合具体的容器选择器
+   - 避免影响非目标元素
+
+#### 文本替换示例
+
+**错误做法（会导致Vue错误）**：
+\`\`\`javascript
+// ❌ 绝对禁止：使用通配符选择器
+const elements = document.querySelectorAll('*');
+elements.forEach(el => {
+  if (el.textContent && el.textContent.includes('百度热搜')) {
+    el.textContent = el.textContent.replace('百度热搜', '热搜');
+  }
+});
+\`\`\`
+
+**正确做法**：
+\`\`\`javascript
+// ✅ 正确：使用具体的容器选择器
+const containers = document.querySelectorAll('.s-hotsearch-title, .hot-title, [class*="hotsearch"]');
+containers.forEach(container => {
+  if (container.textContent && container.textContent.includes('百度热搜')) {
+    container.textContent = container.textContent.replace('百度热搜', '热搜');
+  }
+});
+
+// ✅ 或者使用属性选择器
+const titleElements = document.querySelectorAll('[aria-label*="百度热搜"]');
+titleElements.forEach(el => {
+  el.textContent = el.textContent.replace('百度热搜', '热搜');
+});
+\`\`\`
 
 ### 智能方法选择
 **根据任务类型选择最合适的方法：**
 
-#### 1. **CSS方法** (推荐用于样式操作)
-- 适用场景：隐藏、显示、高亮、样式修改
-- 优势：简单、高效、兼容性好
-- 示例：\`{"type": "highlight", "selector": ".target", "css": "border: 2px solid blue;"}\`
-
-#### 2. **DOM方法** (推荐用于结构操作)
-- 适用场景：添加、删除、修改、移动元素
-- 优势：真正的DOM操作，持久化
-- 示例：\`{"type": "remove", "selector": ".advertisement"}\`
-
-#### 3. **JavaScript方法** (推荐用于复杂操作)
-- 适用场景：复杂逻辑、条件判断、动态操作
-- 优势：最灵活，可以实现任何操作
-- 示例：\`{"type": "execute_js", "javascript": "document.querySelectorAll('span').forEach(el => { if(el.textContent.includes('一见')) el.style.border = '2px solid blue'; });"}\`
+#### **JavaScript方法** (唯一推荐方法)
+- 适用场景：所有DOM操作，包括隐藏、显示、添加、删除、修改、移动元素
+- 优势：最灵活，可以实现任何操作，无需预定义操作类型
+- 示例：
+  - 隐藏元素：\`{"type": "execute_js", "javascript": "document.querySelector('.ad').style.display = 'none'"}\`
+  - 移除元素：\`{"type": "execute_js", "javascript": "document.querySelector('.advertisement').remove()"}\`
+  - 高亮元素：\`{"type": "execute_js", "javascript": "document.querySelectorAll('span').forEach(el => { if(el.textContent.includes('一见')) el.style.border = '2px solid blue'; });"}\`
 
 ### 方法选择策略
-1. **简单样式操作** → 使用CSS方法
-2. **元素结构操作** → 使用DOM方法  
-3. **复杂逻辑操作** → 使用JavaScript方法
-4. **文本匹配困难** → 使用JavaScript方法
-5. **需要条件判断** → 使用JavaScript方法
-6. **匹配包含特定文本的元素** → 优先使用JavaScript方法
+**所有操作都使用JavaScript方法：**
+1. **样式操作** → 使用JavaScript直接操作style属性
+2. **元素结构操作** → 使用JavaScript的DOM API
+3. **复杂逻辑操作** → 使用JavaScript的条件判断和循环
+4. **文本匹配** → 使用JavaScript的textContent匹配
+5. **条件判断** → 使用JavaScript的if/else语句
+6. **批量操作** → 使用JavaScript的forEach/for循环
 
 ### 文本匹配最佳实践
 **当需要匹配包含特定文本的元素时：**
-- 如果元素有独特的class或ID，可以使用CSS方法
-- 如果元素没有独特的标识符，必须使用JavaScript方法
-- JavaScript方法可以精确匹配textContent，不受选择器限制
+- 使用JavaScript方法精确匹配textContent
+- 不受CSS选择器限制，可以匹配任何文本内容
+- 可以结合条件判断进行复杂的文本匹配
 
 **推荐做法：**
-- 对于"高亮包含'X'文本的元素"这类任务，优先使用JavaScript方法
+- 对于"高亮包含'X'文本的元素"这类任务，使用JavaScript方法
 - 使用 \`document.querySelectorAll('*')\` 遍历所有元素
+- 使用 \`el.textContent.includes('关键词')\` 进行文本匹配
 - 使用 \`textContent.includes()\` 进行文本匹配
 
 ### 精确选择器生成策略
@@ -524,6 +797,14 @@ ${featureGuidance}
 - 突出各自的优势和劣势
 - 给出选择建议`,
 
+      browser_control: `## 浏览器控制模式
+- 分析页面完整HTML结构
+- 生成精确的CSS选择器
+- 避免使用通配符选择器（*）
+- 在操作前检查元素存在性
+- 提供安全的DOM操作代码
+- 使用具体的ID、class或属性选择器`,
+
       general: `## 通用模式
 - 根据内容特点调整回答方式
 - 提供全面而有用的信息
@@ -572,12 +853,29 @@ ${featureGuidance}
     question: string,
     content: string,
     networkAnalysis?: any,
-    domStructure?: any
+    domStructure?: any,
+    conversationHistory?: Array<{
+      role: "user" | "assistant";
+      content: string;
+    }>
   ): string {
     const contentInfo = this.getContentInfo(context, content);
     const networkInfo = this.getNetworkInfo(networkAnalysis);
     const domInfo = this.getDOMInfo(domStructure);
-    const htmlStructure = this.getPageHTMLStructure(domStructure);
+    const htmlStructure = this.getPageHTMLStructure(
+      domStructure,
+      context.userIntent
+    );
+
+    // 构建对话历史部分
+    let conversationHistoryText = "";
+    if (conversationHistory && conversationHistory.length > 0) {
+      conversationHistoryText = `\n\n**对话历史：**\n`;
+      conversationHistory.forEach((msg, index) => {
+        const role = msg.role === "user" ? "用户" : "助手";
+        conversationHistoryText += `${index + 1}. ${role}: ${msg.content}\n`;
+      });
+    }
 
     return `作为智能网页助手，请基于以下网页内容回答用户问题：
 
@@ -587,7 +885,7 @@ ${networkInfo}
 
 ${domInfo}
 
-${htmlStructure}
+${htmlStructure}${conversationHistoryText}
 
 **用户问题：** ${question}
 
@@ -776,11 +1074,23 @@ ${htmlStructure}
   /**
    * 获取页面完整HTML结构
    */
-  private getPageHTMLStructure(domData?: any): string {
+  private getPageHTMLStructure(
+    domData?: any,
+    userIntent?: PromptContext["userIntent"]
+  ): string {
     try {
+      console.log("getPageHTMLStructure - userIntent:", userIntent);
+      console.log("getPageHTMLStructure - domData:", domData);
+
       // 如果传入了DOM数据，使用传入的数据
       if (domData && domData.htmlStructure) {
-        return domData.htmlStructure;
+        console.log("使用传入的DOM数据中的htmlStructure");
+        console.log("HTML结构长度:", domData.htmlStructure.length);
+        console.log(
+          "HTML结构前500字符:",
+          domData.htmlStructure.substring(0, 500)
+        );
+        return `**页面完整HTML结构：**\n\`\`\`html\n${domData.htmlStructure}\n\`\`\`\n`;
       }
 
       // 检查是否在background script环境中
@@ -793,57 +1103,96 @@ ${htmlStructure}
       const body = document.body;
       if (!body) return "";
 
-      let html = `**页面完整HTML结构：**\n`;
+      // 根据用户意图决定是否提供完整HTML
+      // 对于任何涉及页面内容的查询都提供完整HTML，确保AI有足够信息
+      const needsFullHTML =
+        userIntent === "browser_control" ||
+        userIntent === "analysis" ||
+        userIntent === "question";
+      console.log("是否需要完整HTML:", needsFullHTML);
+
+      let html = `**页面${needsFullHTML ? "完整" : "主要"}HTML结构：**\n`;
       html += `\`\`\`html\n`;
 
-      // 获取页面的主要部分
-      const mainSections = [
-        "header",
-        "nav",
-        "main",
-        "article",
-        "section",
-        "aside",
-        "footer",
-      ];
+      if (needsFullHTML) {
+        console.log("提供完整HTML结构");
+        // 浏览器控制模式：提供完整的HTML结构
+        html += `<!-- 完整页面HTML结构 -->\n`;
+        html += `<!DOCTYPE html>\n`;
+        html += `<html>\n`;
+        html += `<head>\n`;
+        html += document.head.outerHTML;
+        html += `</head>\n`;
+        html += `<body>\n`;
+        html += document.body.outerHTML;
+        html += `</body>\n`;
+        html += `</html>\n`;
+      } else {
+        console.log("提供主要HTML结构");
+        // 其他模式：只提供主要部分
+        const mainSections = [
+          "header",
+          "nav",
+          "main",
+          "article",
+          "section",
+          "aside",
+          "footer",
+        ];
 
-      mainSections.forEach((tag) => {
-        const elements = document.querySelectorAll(tag);
-        if (elements.length > 0) {
-          html += `<!-- ${tag.toUpperCase()} 部分 -->\n`;
-          elements.forEach((el, index) => {
+        mainSections.forEach((tag) => {
+          const elements = document.querySelectorAll(tag);
+          if (elements.length > 0) {
+            html += `<!-- ${tag.toUpperCase()} 部分 -->\n`;
+            elements.forEach((el, index) => {
+              const outerHTML = el.outerHTML;
+              // 限制长度，避免过长
+              const truncatedHTML =
+                outerHTML.length > 500
+                  ? outerHTML.substring(0, 500) + "..."
+                  : outerHTML;
+              html += `${truncatedHTML}\n`;
+            });
+            html += `\n`;
+          }
+        });
+
+        // 获取所有有意义的元素（有ID、class或特定属性的元素）
+        const meaningfulElements = this.getMeaningfulElements();
+        if (meaningfulElements.length > 0) {
+          html += `<!-- 有意义的元素（有ID、class或特定属性） -->\n`;
+          meaningfulElements.forEach((el) => {
             const outerHTML = el.outerHTML;
-            // 限制长度，避免过长
             const truncatedHTML =
-              outerHTML.length > 500
-                ? outerHTML.substring(0, 500) + "..."
+              outerHTML.length > 300
+                ? outerHTML.substring(0, 300) + "..."
                 : outerHTML;
             html += `${truncatedHTML}\n`;
           });
           html += `\n`;
         }
-      });
 
-      // 获取包含特定文本的元素
-      const textElements = document.querySelectorAll("*");
-      const relevantElements: Element[] = [];
+        // 获取包含特定文本的元素
+        const textElements = document.querySelectorAll("*");
+        const relevantElements: Element[] = [];
 
-      textElements.forEach((el) => {
-        if (el.textContent && el.textContent.includes("一见")) {
-          relevantElements.push(el);
-        }
-      });
-
-      if (relevantElements.length > 0) {
-        html += `<!-- 包含"一见"文本的元素 -->\n`;
-        relevantElements.forEach((el) => {
-          const outerHTML = el.outerHTML;
-          const truncatedHTML =
-            outerHTML.length > 300
-              ? outerHTML.substring(0, 300) + "..."
-              : outerHTML;
-          html += `${truncatedHTML}\n`;
+        textElements.forEach((el) => {
+          if (el.textContent && el.textContent.includes("一见")) {
+            relevantElements.push(el);
+          }
         });
+
+        if (relevantElements.length > 0) {
+          html += `<!-- 包含"一见"文本的元素 -->\n`;
+          relevantElements.forEach((el) => {
+            const outerHTML = el.outerHTML;
+            const truncatedHTML =
+              outerHTML.length > 300
+                ? outerHTML.substring(0, 300) + "..."
+                : outerHTML;
+            html += `${truncatedHTML}\n`;
+          });
+        }
       }
 
       html += `\`\`\`\n`;
@@ -852,6 +1201,46 @@ ${htmlStructure}
       console.error("获取页面HTML结构失败:", error);
       return "";
     }
+  }
+
+  /**
+   * 获取有意义的元素（有ID、class或特定属性的元素）
+   */
+  private getMeaningfulElements(): Element[] {
+    const elements: Element[] = [];
+
+    // 获取所有有ID的元素
+    const elementsWithId = document.querySelectorAll("[id]");
+    elementsWithId.forEach((el) => {
+      if (el.id && el.id.trim() !== "") {
+        elements.push(el);
+      }
+    });
+
+    // 获取所有有class的元素
+    const elementsWithClass = document.querySelectorAll("[class]");
+    elementsWithClass.forEach((el) => {
+      if (
+        el.className &&
+        el.className.trim() !== "" &&
+        !elements.includes(el)
+      ) {
+        elements.push(el);
+      }
+    });
+
+    // 获取所有有特定属性的元素
+    const elementsWithAttributes = document.querySelectorAll(
+      "[data-*], [role], [aria-*]"
+    );
+    elementsWithAttributes.forEach((el) => {
+      if (!elements.includes(el)) {
+        elements.push(el);
+      }
+    });
+
+    // 限制数量，避免过多
+    return elements.slice(0, 50);
   }
 
   /**
@@ -1004,64 +1393,61 @@ ${htmlStructure}
    * 解析AI回答中的浏览器控制指令
    */
   public parseBrowserControlInstructions(content: string): Array<{
-    type:
-      | "hide"
-      | "show"
-      | "style"
-      | "remove"
-      | "highlight"
-      | "add"
-      | "modify"
-      | "move"
-      | "execute_js";
-    selector?: string;
-    css?: string;
+    type: "execute_js";
+    javascript: string;
     reason?: string;
-    content?: string;
-    tag?: string;
-    attributes?: Record<string, string>;
-    targetSelector?: string;
-    position?: "before" | "after" | "inside";
-    javascript?: string;
-    method?: "css" | "dom" | "javascript";
   }> {
     const instructions: Array<{
-      type:
-        | "hide"
-        | "show"
-        | "style"
-        | "remove"
-        | "highlight"
-        | "add"
-        | "modify"
-        | "move"
-        | "execute_js";
-      selector?: string;
-      css?: string;
+      type: "execute_js";
+      javascript: string;
       reason?: string;
-      content?: string;
-      tag?: string;
-      attributes?: Record<string, string>;
-      targetSelector?: string;
-      position?: "before" | "after" | "inside";
-      javascript?: string;
-      method?: "css" | "dom" | "javascript";
     }> = [];
+
+    // 前置验证：检查是否包含禁止的选择器
+    if (this.containsForbiddenSelectors(content)) {
+      console.warn("检测到禁止的选择器，拒绝解析");
+      return instructions;
+    }
 
     // 首先尝试解析JSON格式的指令
     try {
-      const jsonMatch = content.match(/\{[\s\S]*"type"[\s\S]*\}/);
+      // 匹配第一个完整的JSON对象
+      const jsonMatch = content.match(
+        /\{[\s\S]*?"type"[\s\S]*?\}(?=\s*$|\s*```|\s*\{)/
+      );
       if (jsonMatch) {
-        const instruction = JSON.parse(jsonMatch[0]);
-        if (
-          instruction.type &&
-          this.isValidBrowserActionType(instruction.type)
-        ) {
+        let jsonString = jsonMatch[0];
+
+        // 修复常见的JSON格式问题
+        jsonString = this.fixJSONFormat(jsonString);
+
+        const instruction = JSON.parse(jsonString);
+        if (instruction.type === "execute_js" && instruction.javascript) {
           instructions.push(instruction);
           return instructions;
         }
       }
     } catch (error) {
+      console.warn("JSON解析失败:", error);
+      const rawJson = content.match(
+        /\{[\s\S]*?"type"[\s\S]*?\}(?=\s*$|\s*```|\s*\{)/
+      )?.[0];
+      console.warn("原始JSON:", rawJson);
+
+      // 尝试修复JSON格式
+      if (rawJson) {
+        try {
+          const fixedJson = this.fixJSONFormat(rawJson);
+          const instruction = JSON.parse(fixedJson);
+          if (instruction.type === "execute_js" && instruction.javascript) {
+            instructions.push(instruction);
+            console.log("JSON修复成功，已解析指令");
+            return instructions;
+          }
+        } catch (fixError) {
+          console.warn("JSON修复也失败:", fixError);
+        }
+      }
       // JSON解析失败，继续尝试其他格式
     }
 
@@ -1071,7 +1457,16 @@ ${htmlStructure}
 
     while ((match = browserControlRegex.exec(content)) !== null) {
       try {
-        const instruction = JSON.parse(match[1].trim());
+        // 清理和修复JSON字符串
+        let jsonString = match[1].trim();
+
+        // 处理JavaScript代码中的换行符和特殊字符
+        if (jsonString.includes('"javascript"')) {
+          // 找到javascript字段并修复其值
+          jsonString = this.fixJavaScriptInJSON(jsonString);
+        }
+
+        const instruction = JSON.parse(jsonString);
         if (
           instruction.type &&
           this.isValidBrowserActionType(instruction.type)
@@ -1084,6 +1479,109 @@ ${htmlStructure}
     }
 
     return instructions;
+  }
+
+  /**
+   * 修复JSON格式问题
+   */
+  private fixJSONFormat(jsonString: string): string {
+    try {
+      // 修复缺少闭合引号的问题
+      jsonString = jsonString.replace(
+        /"reason":\s*"([^"]*?)(?=\s*})/g,
+        '"reason": "$1"'
+      );
+
+      // 使用更强大的正则表达式来匹配和修复javascript字段
+      const javascriptRegex = /"javascript"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/g;
+
+      jsonString = jsonString.replace(javascriptRegex, (match, jsCode) => {
+        // 先解码已有的转义字符
+        let decodedCode = jsCode
+          .replace(/\\"/g, '"') // 解码双引号
+          .replace(/\\\\/g, "\\") // 解码反斜杠
+          .replace(/\\n/g, "\n") // 解码换行符
+          .replace(/\\r/g, "\r") // 解码回车符
+          .replace(/\\t/g, "\t") // 解码制表符
+          .replace(/\\f/g, "\f"); // 解码换页符
+
+        // 修复CSS选择器中的单引号问题
+        // 将 [class*='hotsearch'] 转换为 [class*="hotsearch"]
+        decodedCode = decodedCode.replace(
+          /\[([^=]+)='([^']+)'\]/g,
+          '[$1="$2"]'
+        );
+
+        // 重新转义所有特殊字符
+        const escapedCode = decodedCode
+          .replace(/\\/g, "\\\\") // 转义反斜杠
+          .replace(/"/g, '\\"') // 转义双引号
+          .replace(/\n/g, "\\n") // 转义换行符
+          .replace(/\r/g, "\\r") // 转义回车符
+          .replace(/\t/g, "\\t") // 转义制表符
+          .replace(/\f/g, "\\f"); // 转义换页符
+
+        return `"javascript": "${escapedCode}"`;
+      });
+
+      return jsonString;
+    } catch (error) {
+      console.warn("修复JSON格式时出错:", error);
+      return jsonString;
+    }
+  }
+
+  /**
+   * 检查是否包含禁止的选择器
+   */
+  private containsForbiddenSelectors(content: string): boolean {
+    const forbiddenPatterns = [
+      /document\.querySelectorAll\s*\(\s*['"`]\*['"`]\s*\)/g,
+      /document\.querySelectorAll\s*\(\s*['"`]div['"`]\s*\)/g,
+      /document\.querySelectorAll\s*\(\s*['"`]span['"`]\s*\)/g,
+      /document\.querySelectorAll\s*\(\s*['"`]a['"`]\s*\)/g,
+      /document\.querySelectorAll\s*\(\s*['"`]p['"`]\s*\)/g,
+      /document\.querySelectorAll\s*\(\s*['"`]\[class\]['"`]\s*\)/g,
+      /document\.querySelectorAll\s*\(\s*['"`]img['"`]\s*\)/g,
+      /document\.querySelectorAll\s*\(\s*['"`]button['"`]\s*\)/g,
+    ];
+
+    return forbiddenPatterns.some((pattern) => pattern.test(content));
+  }
+
+  /**
+   * 修复JSON中的JavaScript代码字符串
+   */
+  private fixJavaScriptInJSON(jsonString: string): string {
+    try {
+      // 使用更强大的正则表达式来匹配javascript字段
+      const javascriptRegex = /"javascript"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
+
+      return jsonString.replace(javascriptRegex, (match, jsCode) => {
+        // 先解码已有的转义字符，然后重新转义
+        let decodedCode = jsCode
+          .replace(/\\"/g, '"') // 解码双引号
+          .replace(/\\\\/g, "\\") // 解码反斜杠
+          .replace(/\\n/g, "\n") // 解码换行符
+          .replace(/\\r/g, "\r") // 解码回车符
+          .replace(/\\t/g, "\t") // 解码制表符
+          .replace(/\\f/g, "\f"); // 解码换页符
+
+        // 重新转义所有特殊字符
+        const escapedCode = decodedCode
+          .replace(/\\/g, "\\\\") // 转义反斜杠
+          .replace(/"/g, '\\"') // 转义双引号
+          .replace(/\n/g, "\\n") // 转义换行符
+          .replace(/\r/g, "\\r") // 转义回车符
+          .replace(/\t/g, "\\t") // 转义制表符
+          .replace(/\f/g, "\\f"); // 转义换页符
+
+        return `"javascript": "${escapedCode}"`;
+      });
+    } catch (error) {
+      console.warn("修复JavaScript代码时出错:", error);
+      return jsonString;
+    }
   }
 
   /**
@@ -1113,37 +1611,31 @@ ${htmlStructure}
    * 检查是否为有效的浏览器操作类型
    */
   private isValidBrowserActionType(type: string): boolean {
-    const validTypes = [
-      "hide",
-      "show",
-      "style",
-      "remove",
-      "highlight",
-      "add",
-      "modify",
-      "move",
-      "execute_js",
-    ];
-    return validTypes.includes(type);
+    return type === "execute_js";
   }
 }
 
 // 导出单例实例
 export const promptManager = PromptManager.getInstance();
 
-// 便捷函数
-export function generateSmartPrompt(
+// 便捷函数（异步版本，推荐使用）
+export async function generateSmartPromptAsync(
   question: string,
   content: string,
   url: string,
   networkAnalysis?: any,
-  domStructure?: any
-): PromptTemplate {
-  return promptManager.generatePrompt(
+  domStructure?: any,
+  conversationHistory?: Array<{
+    role: "user" | "assistant";
+    content: string;
+  }>
+): Promise<PromptTemplate> {
+  return await promptManager.generatePrompt(
     question,
     content,
     url,
     networkAnalysis,
-    domStructure
+    domStructure,
+    conversationHistory
   );
 }

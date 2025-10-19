@@ -68,7 +68,6 @@ class StateManager {
    * 开始流式处理
    */
   public startStreaming(): void {
-    console.log("StateManager: 开始流式处理");
     this.setProcessing(true, true);
   }
 

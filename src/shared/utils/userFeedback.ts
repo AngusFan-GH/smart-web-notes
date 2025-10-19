@@ -1,21 +1,49 @@
 // 用户反馈管理器
+
+// 反馈消息类型常量
+export const FEEDBACK_TYPES = {
+  INFO: "info",
+  SUCCESS: "success",
+  WARNING: "warning",
+  ERROR: "error",
+  LOADING: "loading",
+} as const;
+
+// 处理步骤状态常量
+export const STEP_STATUS = {
+  PENDING: "pending",
+  PROCESSING: "processing",
+  COMPLETED: "completed",
+  ERROR: "error",
+} as const;
+
+// 动作类型常量
+export const ACTION_TYPES = {
+  PRIMARY: "primary",
+  SECONDARY: "secondary",
+} as const;
+
+export type FeedbackType = (typeof FEEDBACK_TYPES)[keyof typeof FEEDBACK_TYPES];
+export type StepStatus = (typeof STEP_STATUS)[keyof typeof STEP_STATUS];
+export type ActionType = (typeof ACTION_TYPES)[keyof typeof ACTION_TYPES];
+
 export interface FeedbackMessage {
   id: string;
-  type: "info" | "success" | "warning" | "error" | "loading";
+  type: FeedbackType;
   title: string;
   message: string;
   duration?: number;
   actions?: Array<{
     label: string;
     action: () => void;
-    type?: "primary" | "secondary";
+    type?: ActionType;
   }>;
 }
 
 export interface ProcessingStep {
   id: string;
   name: string;
-  status: "pending" | "processing" | "completed" | "error";
+  status: StepStatus;
   message?: string;
 }
 
@@ -73,7 +101,7 @@ export class UserFeedbackManager {
   public errorStep(stepId: string, message?: string): void {
     const step = this.processingSteps.find((s) => s.id === stepId);
     if (step) {
-      step.status = "error";
+      step.status = STEP_STATUS.ERROR;
       if (message) {
         step.message = message;
       }
@@ -160,7 +188,7 @@ export class UserFeedbackManager {
    */
   public showSuccess(title: string, message: string, duration = 3000): string {
     return this.addFeedback({
-      type: "success",
+      type: FEEDBACK_TYPES.SUCCESS,
       title,
       message,
       duration,
@@ -176,7 +204,7 @@ export class UserFeedbackManager {
     actions?: FeedbackMessage["actions"]
   ): string {
     return this.addFeedback({
-      type: "error",
+      type: FEEDBACK_TYPES.ERROR,
       title,
       message,
       actions,

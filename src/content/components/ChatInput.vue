@@ -217,6 +217,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   min-height: 44px;
+  overflow: hidden;
 }
 
 .input-editor {

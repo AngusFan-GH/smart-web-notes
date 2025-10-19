@@ -4,7 +4,7 @@ import {
   AIResponse,
 } from "../types/commandTypes";
 import { ApiService } from "./apiService";
-import { generateSmartPrompt } from "../utils/promptManager";
+import { generateSmartPromptAsync } from "../utils/promptManager";
 
 export class EnhancedAISystem {
   private static instance: EnhancedAISystem;
@@ -87,7 +87,7 @@ export class EnhancedAISystem {
     // 确保API服务有正确的设置
     await this.ensureApiSettings();
 
-    const enhancedPrompt = this.buildEnhancedPrompt(context, options);
+    const enhancedPrompt = await this.buildEnhancedPrompt(context, options);
 
     return new Promise((resolve, reject) => {
       let fullResponse = "";
@@ -130,17 +130,20 @@ export class EnhancedAISystem {
   }
 
   // 构建增强提示词
-  private buildEnhancedPrompt(
+  private async buildEnhancedPrompt(
     context: SmartContext,
     options?: AIProcessingOptions
-  ): string {
-    let basePrompt = generateSmartPrompt(
+  ): Promise<string> {
+    const promptTemplate = await generateSmartPromptAsync(
       context.question,
       context.pageContent.text,
       context.metadata.url,
       context.pageContent.networkAnalysis,
-      context.pageContent.domStructure
+      context.pageContent.domStructure,
+      context.conversationHistory
     );
+
+    let basePrompt = promptTemplate.system + "\n\n" + promptTemplate.user;
 
     if (options?.fallbackReason) {
       basePrompt += `\n\n注意：直接命令执行失败，原因：${options.fallbackReason}`;

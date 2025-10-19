@@ -83,6 +83,29 @@
             <!-- 回答内容 -->
             <div v-html="getRenderedContent(message.id)"></div>
           </div>
+
+          <!-- 复制按钮 -->
+          <div class="message-actions">
+            <el-tooltip
+              content="复制消息内容"
+              placement="top"
+              :show-after="500"
+            >
+              <el-button
+                class="action-button copy-button"
+                :class="{ 'copy-success': copyStates[message.id] }"
+                @click="copyMessage(message)"
+                :disabled="props.isProcessing"
+                circle
+                size="small"
+              >
+                <el-icon>
+                  <Check v-if="copyStates[message.id]" />
+                  <DocumentCopy v-else />
+                </el-icon>
+              </el-button>
+            </el-tooltip>
+          </div>
         </div>
 
         <!-- 加载中提示 -->
@@ -114,8 +137,8 @@
 
 <script setup lang="ts">
 import { ref, watch, onMounted, nextTick } from "vue";
-import { ElButton, ElScrollbar } from "element-plus";
-import { ArrowDown } from "@element-plus/icons-vue";
+import { ElButton, ElScrollbar, ElTooltip } from "element-plus";
+import { ArrowDown, DocumentCopy, Check } from "@element-plus/icons-vue";
 import { renderMarkdown } from "../../shared/utils/markdown";
 import { appActions } from "../../shared/stores/appStore";
 
@@ -140,6 +163,9 @@ const isAtBottom = ref(true);
 // 渲染内容缓存 - 简化为只存储已渲染的内容
 const renderedContentCache = ref<Map<string, string>>(new Map());
 
+// 复制状态管理
+const copyStates = ref<Record<string, boolean>>({});
+
 // 获取渲染内容（同步）
 const getRenderedContent = (messageId: string): string => {
   const message = props.messages.find((m) => m.id === messageId);
@@ -150,11 +176,15 @@ const getRenderedContent = (messageId: string): string => {
     // 对于流式更新的消息，立即渲染
     renderMarkdown(message.content)
       .then((result) => {
-        renderedContentCache.value.set(messageId, result);
+        nextTick(() => {
+          renderedContentCache.value.set(messageId, result);
+        });
       })
       .catch(() => {
-        const fallback = message.content.replace(/\n/g, "<br>");
-        renderedContentCache.value.set(messageId, fallback);
+        nextTick(() => {
+          const fallback = message.content.replace(/\n/g, "<br>");
+          renderedContentCache.value.set(messageId, fallback);
+        });
       });
 
     // 返回临时内容
@@ -176,11 +206,15 @@ const getRenderedThinkingContent = (messageId: string): string => {
     // 对于流式更新的思考内容，立即渲染
     renderMarkdown(message.thinkingContent)
       .then((result) => {
-        renderedContentCache.value.set(cacheKey, result);
+        nextTick(() => {
+          renderedContentCache.value.set(cacheKey, result);
+        });
       })
       .catch(() => {
-        const fallback = message.thinkingContent.replace(/\n/g, "<br>");
-        renderedContentCache.value.set(cacheKey, fallback);
+        nextTick(() => {
+          const fallback = message.thinkingContent.replace(/\n/g, "<br>");
+          renderedContentCache.value.set(cacheKey, fallback);
+        });
       });
 
     // 返回临时内容
@@ -193,6 +227,42 @@ const getRenderedThinkingContent = (messageId: string): string => {
 // 切换思考内容折叠状态
 const toggleThinking = (messageId: string) => {
   appActions.toggleThinkingCollapse(messageId);
+};
+
+// 复制消息内容
+const copyMessage = async (message: Message) => {
+  try {
+    // 获取纯文本内容（去除HTML标签）
+    const textContent = message.content.replace(/<[^>]*>/g, "").trim();
+
+    // 使用现代 Clipboard API
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(textContent);
+    } else {
+      // 降级方案：使用传统的 document.execCommand
+      const textArea = document.createElement("textarea");
+      textArea.value = textContent;
+      textArea.style.position = "fixed";
+      textArea.style.left = "-999999px";
+      textArea.style.top = "-999999px";
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textArea);
+    }
+
+    // 显示成功状态
+    copyStates.value[message.id] = true;
+
+    // 2秒后恢复原始状态
+    setTimeout(() => {
+      copyStates.value[message.id] = false;
+    }, 2000);
+  } catch (error) {
+    console.error("复制失败:", error);
+    // 可以在这里添加错误提示
+  }
 };
 
 // 滚动到底部（参考 newme-ds 的 handleDown 实现）
@@ -403,9 +473,71 @@ onMounted(async () => {
   }
 }
 
+/* 消息操作按钮区域 */
+.message-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 8px 4px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.message-item:hover .message-actions {
+  opacity: 1;
+}
+
+/* 通用按钮样式 */
+.action-button {
+  width: 32px !important;
+  height: 32px !important;
+  min-width: 32px !important;
+  padding: 0 !important;
+  background: rgba(255, 255, 255, 0.9) !important;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
+  transition: all 0.2s ease !important;
+}
+
+.action-button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 1) !important;
+  border-color: rgba(0, 0, 0, 0.2) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+  transform: translateY(-1px) !important;
+}
+
+.action-button:active:not(:disabled) {
+  transform: translateY(0) !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2) !important;
+}
+
+.action-button:disabled {
+  opacity: 0.5 !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+}
+
+/* 复制按钮成功状态 */
+.copy-button.copy-success {
+  background: linear-gradient(135deg, #67c23a 0%, #85ce61 100%) !important;
+  border-color: #67c23a !important;
+  color: white !important;
+  box-shadow: 0 4px 12px rgba(103, 194, 58, 0.3) !important;
+}
+
+.copy-button.copy-success:hover {
+  background: linear-gradient(135deg, #5daf34 0%, #7bc85a 100%) !important;
+  box-shadow: 0 6px 16px rgba(103, 194, 58, 0.4) !important;
+}
+
 /* 用户消息样式 */
 .user-message {
   justify-content: flex-end !important;
+}
+
+.user-message .message-actions {
+  order: -1;
+  margin-right: 8px;
 }
 
 .user-message .message-content {

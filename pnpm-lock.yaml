@@ -8,15 +8,24 @@ importers:
 
   .:
     dependencies:
+      '@babel/standalone':
+        specifier: ^7.28.4
+        version: 7.28.4
       '@element-plus/icons-vue':
         specifier: ^2.3.2
         version: 2.3.2(vue@3.5.22(typescript@5.9.3))
       '@types/markdown-it':
         specifier: ^14.1.2
         version: 14.1.2
+      chrome-inject-eval:
+        specifier: ^1.0.4
+        version: 1.0.4
       element-plus:
         specifier: ^2.8.3
         version: 2.11.4(vue@3.5.22(typescript@5.9.3))
+      eval5:
+        specifier: ^1.4.8
+        version: 1.4.8
       highlight.js:
         specifier: ^11.9.0
         version: 11.11.1
@@ -86,6 +95,10 @@ packages:
 
   '@babel/runtime@7.28.2':
     resolution: {integrity: sha512-KHp2IflsnGywDjBWDkR9iEqiWSpc8GIi0lgTT3mOElT0PP1tG26P4tmFI2YvAdzgq9RGyoHZQEIEdZy6Ec5xCA==}
+    engines: {node: '>=6.9.0'}
+
+  '@babel/standalone@7.28.4':
+    resolution: {integrity: sha512-Qc1BNCfuJZBKs2SC5lqRmSYOw7Ka0X7urZQ7oVsGIax4eGDUIHX+CDg752N4jDxC2rbBh3li098ReGOtjT0x4g==}
     engines: {node: '>=6.9.0'}
 
   '@babel/types@7.28.4':
@@ -666,6 +679,12 @@ packages:
   '@sxzz/popperjs-es@2.11.7':
     resolution: {integrity: sha512-Ccy0NlLkzr0Ex2FKvh2X+OyERHXJ88XJ1MXtsI9y9fGexlaXaVTPzBCRBwIxFkORuOb+uBqeu+RqnpgYTEZRUQ==}
 
+  '@types/acorn@4.0.6':
+    resolution: {integrity: sha512-veQTnWP+1D/xbxVrPC3zHnCZRjSrKfhbMUlEA43iMZLu7EsnTtkJklIuwrCPbOi8YkvDQAiW05VQQFvvz9oieQ==}
+
+  '@types/estree@0.0.41':
+    resolution: {integrity: sha512-rIAmXyJlqw4KEBO7+u9gxZZSQHaCNnIzYrnNmYVpgfJhxTqO0brCX0SYpqUTkVI5mwwUwzmtspLBGBKroMeynA==}
+
   '@types/estree@1.0.8':
     resolution: {integrity: sha512-dWHzHa2WqEXI/O1E9OjrocMTKJl2mSrEolh1Iomrv6U+JuNwaHXsXx9bLu5gG7BUWFIN0skIQJQ/L1rIex4X6w==}
 
@@ -795,6 +814,11 @@ packages:
 
   '@wxt-dev/storage@1.2.0':
     resolution: {integrity: sha512-4A44zCpwl5GZdmUdSJvUWJ6ekZZ+Fz5ttYqTGPIRJSsyosKX8X8Yl7D2Loy1ZlqIg6oJHysaiFXALtTE+pFjpw==}
+
+  acorn@7.4.1:
+    resolution: {integrity: sha512-nQyp0o1/mNdbTO1PO6kHkwSrmgZ0MT/jCCpNiwbUjGoRN4dlBhqJtoQuCnEOKzgTVwg0ZWiCoQy6SxMebQVh8A==}
+    engines: {node: '>=0.4.0'}
+    hasBin: true
 
   acorn@8.15.0:
     resolution: {integrity: sha512-NZyJarBfL7nWwIq+FDL6Zp/yHEhePMNnnJ0y3qfieCrmNvYct8uvtiV41UvlSe6apAfk0fY1FbWx+NwfmpvtTg==}
@@ -930,6 +954,9 @@ packages:
   chokidar@4.0.3:
     resolution: {integrity: sha512-Qgzu8kfBvo+cA4962jnP1KkS6Dop5NS6g7R5LFYJr4b8Ub94PPQXUksCw9PvXoeXPRRddRNC5C1JQUR2SMGtnA==}
     engines: {node: '>= 14.16.0'}
+
+  chrome-inject-eval@1.0.4:
+    resolution: {integrity: sha512-SFyqimJcfrMMrVs4Hi7xsLw91HoOQeq0BZz8dO2/KmFA22DBv1vXAR7VWGjeDftVKrEBoPKSy8/y2tYw02/mNg==}
 
   chrome-launcher@1.2.0:
     resolution: {integrity: sha512-JbuGuBNss258bvGil7FT4HKdC3SC2K7UAEUqiPy3ACS3Yxo3hAW6bvFpCu2HsIJLgTqxgEX6BkujvzZfLpUD0Q==}
@@ -1204,6 +1231,9 @@ packages:
 
   estree-walker@3.0.3:
     resolution: {integrity: sha512-7RUKfXgSMMkzt6ZuXmqapOurLGPPfgj6l9uRZ7lRGolvk0y2yocc35LdcxKC5PQZdn2DMqioAQ2NoWcrTKmm6g==}
+
+  eval5@1.4.8:
+    resolution: {integrity: sha512-sdc04TAeklUHrITxBWksrDsDBWqAvYs9VCS2cpSHrSqzTdva4JkILV+x7kVlyoUqp/g7kMyGS+4RMYgfkGciAw==}
 
   eventemitter3@5.0.1:
     resolution: {integrity: sha512-GWkBvjiSZK87ELrYOSESUYeVIc9mvLLf/nXalMOS5dYrgZq9o5OVkbZAVM06CVxYsCwH9BDZFPlQTlPA1j4ahA==}
@@ -2379,6 +2409,8 @@ snapshots:
 
   '@babel/runtime@7.28.2': {}
 
+  '@babel/standalone@7.28.4': {}
+
   '@babel/types@7.28.4':
     dependencies:
       '@babel/helper-string-parser': 7.27.1
@@ -2749,6 +2781,12 @@ snapshots:
 
   '@sxzz/popperjs-es@2.11.7': {}
 
+  '@types/acorn@4.0.6':
+    dependencies:
+      '@types/estree': 1.0.8
+
+  '@types/estree@0.0.41': {}
+
   '@types/estree@1.0.8': {}
 
   '@types/filesystem@0.0.36':
@@ -2937,6 +2975,8 @@ snapshots:
       async-mutex: 0.5.0
       dequal: 2.0.3
 
+  acorn@7.4.1: {}
+
   acorn@8.15.0: {}
 
   adm-zip@0.5.16: {}
@@ -3064,6 +3104,11 @@ snapshots:
   chokidar@4.0.3:
     dependencies:
       readdirp: 4.1.2
+
+  chrome-inject-eval@1.0.4:
+    dependencies:
+      '@babel/standalone': 7.28.4
+      eval5: 1.4.8
 
   chrome-launcher@1.2.0:
     dependencies:
@@ -3364,6 +3409,13 @@ snapshots:
   estree-walker@3.0.3:
     dependencies:
       '@types/estree': 1.0.8
+
+  eval5@1.4.8:
+    dependencies:
+      '@babel/runtime': 7.28.2
+      '@types/acorn': 4.0.6
+      '@types/estree': 0.0.41
+      acorn: 7.4.1
 
   eventemitter3@5.0.1: {}
 
