@@ -2,9 +2,12 @@ import type { Settings } from "../types";
 
 export const DEFAULT_SETTINGS: Settings = {
   apiType: "custom",
-  custom_apiKey: "sk-luulfdrjkupdjynjwjrakhugpeizmlhfhomywdiiauspncpc",
-  custom_apiBase: "https://api.siliconflow.cn/v1/chat/completions",
-  custom_model: "deepseek-ai/DeepSeek-V3",
+  custom_apiKey: "sk-7NAitPWQhdhwT2AR66Cc27E060664741A143E38eFbB33bE6",
+  // custom_apiKey: "sk-luulfdrjkupdjynjwjrakhugpeizmlhfhomywdiiauspncpc",
+  custom_apiBase: "http://192.168.103.11:31091/spiritx-api/v1/chat/completions",
+  // custom_apiBase: "https://api.siliconflow.cn/v1/chat/completions",
+  custom_model: "deepseek-r1-distill-qwen-32b-awq",
+  // custom_model: "deepseek-ai/DeepSeek-V3",
   // custom_model: "deepseek-ai/DeepSeek-R1",
   systemPrompt: "",
   enableContext: true,

@@ -4,6 +4,9 @@ import { generateSmartPromptAsync } from "../utils/promptManager";
 export class ApiService {
   private static instance: ApiService;
   private settings: Settings | null = null;
+  private thinkingContent: string = ""; // 累积的思考内容
+  private answerContent: string = ""; // 累积的回答内容
+  private isInThinkingMode: boolean = false; // 是否在思考模式中
 
   private constructor() {}
 
@@ -267,6 +270,11 @@ export class ApiService {
     let fullResponse = "";
     let isCompleted = false; // 防止重复调用onComplete
 
+    // 重置状态
+    this.thinkingContent = "";
+    this.answerContent = "";
+    this.isInThinkingMode = false;
+
     try {
       const fetchOptions: RequestInit = {
         method: "POST",
@@ -328,8 +336,9 @@ export class ApiService {
               const reasoningContent =
                 parsed.choices?.[0]?.delta?.reasoning_content || "";
 
-              // 处理思考内容
+              // 处理思考内容（优先使用 reasoning_content 字段）
               if (reasoningContent) {
+                this.thinkingContent += reasoningContent;
                 onChunk({
                   type: "chunk",
                   content: "",
@@ -341,12 +350,75 @@ export class ApiService {
               // 处理回答内容
               if (content) {
                 fullResponse += content;
-                onChunk({
-                  type: "chunk",
-                  content,
-                  reasoningContent: "",
-                  fullResponse,
-                });
+
+                // 检查是否进入思考模式
+                if (content.includes("<think>")) {
+                  this.isInThinkingMode = true;
+                  // 提取 <think> 标签后的内容
+                  const afterThink = content.substring(
+                    content.indexOf("<think>") + 7
+                  );
+                  if (afterThink) {
+                    this.thinkingContent += afterThink;
+                    onChunk({
+                      type: "chunk",
+                      content: "",
+                      reasoningContent: afterThink,
+                      fullResponse,
+                    });
+                  }
+                }
+                // 检查是否退出思考模式
+                else if (content.includes("</think>")) {
+                  this.isInThinkingMode = false;
+                  // 提取 </think> 标签前的内容
+                  const beforeEndThink = content.substring(
+                    0,
+                    content.indexOf("</think>")
+                  );
+                  if (beforeEndThink) {
+                    this.thinkingContent += beforeEndThink;
+                    onChunk({
+                      type: "chunk",
+                      content: "",
+                      reasoningContent: beforeEndThink,
+                      fullResponse,
+                    });
+                  }
+                  // 提取 </think> 标签后的内容作为回答
+                  const afterEndThink = content.substring(
+                    content.indexOf("</think>") + 8
+                  );
+                  if (afterEndThink) {
+                    this.answerContent += afterEndThink;
+                    onChunk({
+                      type: "chunk",
+                      content: afterEndThink,
+                      reasoningContent: "",
+                      fullResponse,
+                    });
+                  }
+                }
+                // 在思考模式中
+                else if (this.isInThinkingMode) {
+                  this.thinkingContent += content;
+                  onChunk({
+                    type: "chunk",
+                    content: "",
+                    reasoningContent: content,
+                    fullResponse,
+                  });
+                }
+                // 普通回答内容
+                else {
+                  this.answerContent += content;
+                  onChunk({
+                    type: "chunk",
+                    content,
+                    reasoningContent: "",
+                    fullResponse,
+                  });
+                }
               }
             } catch (parseError) {
               console.warn("解析SSE数据失败:", parseError, "原始数据:", data);
@@ -376,6 +448,56 @@ export class ApiService {
       // 其他错误正常处理
       onError(error instanceof Error ? error.message : String(error));
     }
+  }
+
+  /**
+   * 解析包含 <think> 标签的内容，分离思考过程和回答内容
+   */
+  private parseThinkingContent(content: string): {
+    thinkingContent: string;
+    answerContent: string;
+  } {
+    const thinkStartTag = "<think>";
+    const thinkEndTag = "</think>";
+
+    let thinkingContent = "";
+    let answerContent = "";
+
+    // 查找 <think> 标签的位置
+    const thinkStartIndex = content.indexOf(thinkStartTag);
+    const thinkEndIndex = content.indexOf(thinkEndTag);
+
+    if (
+      thinkStartIndex !== -1 &&
+      thinkEndIndex !== -1 &&
+      thinkEndIndex > thinkStartIndex
+    ) {
+      // 提取思考内容（去除标签）
+      thinkingContent = content.substring(
+        thinkStartIndex + thinkStartTag.length,
+        thinkEndIndex
+      );
+
+      // 提取回答内容（think标签之前和之后的内容）
+      const beforeThink = content.substring(0, thinkStartIndex);
+      const afterThink = content.substring(thinkEndIndex + thinkEndTag.length);
+      answerContent = beforeThink + afterThink;
+    } else if (thinkStartIndex !== -1) {
+      // 只有开始标签，没有结束标签（流式传输中）
+      thinkingContent = content.substring(
+        thinkStartIndex + thinkStartTag.length
+      );
+      answerContent = content.substring(0, thinkStartIndex);
+    } else if (thinkEndIndex !== -1) {
+      // 只有结束标签，没有开始标签（流式传输中）
+      thinkingContent = content.substring(0, thinkEndIndex);
+      answerContent = content.substring(thinkEndIndex + thinkEndTag.length);
+    } else {
+      // 没有找到标签，全部作为回答内容
+      answerContent = content;
+    }
+
+    return { thinkingContent, answerContent };
   }
 
   private async sendNonStreamRequest(
