@@ -127,6 +127,16 @@ export class StreamManager {
   }
 
   /**
+   * 更新流式内容（便捷方法，用于 Agent 更新）
+   */
+  public update(content: string): void {
+    this.handleChunk({
+      type: "chunk",
+      content,
+    });
+  }
+
+  /**
    * 完成流式处理
    */
   public complete(fullResponse: string): void {

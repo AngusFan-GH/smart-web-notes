@@ -34,7 +34,7 @@ export default defineConfig({
     name: "Web Assistant",
     description: "AI-powered web content analysis",
     version: "1.0",
-    permissions: ["activeTab", "scripting", "storage", "tabs"],
+    permissions: ["activeTab", "scripting", "storage", "tabs", "debugger"],
     icons: {
       16: "/icons/icon16.png",
       32: "/icons/icon32.png",

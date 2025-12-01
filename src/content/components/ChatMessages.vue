@@ -1,5 +1,17 @@
 <template>
   <div class="chat-container">
+    <!-- 顶部工具栏 -->
+    <div class="chat-toolbar">
+      <el-button
+        class="clear-all-btn"
+        type="danger"
+        size="small"
+        :icon="Delete"
+        @click="handleClearAll"
+      >
+        清空所有消息
+      </el-button>
+    </div>
     <el-scrollbar
       ref="scrollbarRef"
       class="messages-scrollbar"
@@ -14,31 +26,34 @@
               <div class="welcome-title">智能网页助手</div>
             </div>
             <div class="welcome-description">
-              你好！我是你的智能网页助手，可以通过对话帮你：
+              你好！我是你的智能浏览器助手，可以自动分析页面并执行操作，帮你完成各种任务：
             </div>
             <div class="welcome-features">
               <div class="feature-item">
-                <span class="feature-icon">📊</span>
-                <span class="feature-text">分析网页内容和数据</span>
+                <span class="feature-icon">🎯</span>
+                <span class="feature-text">自动执行复杂任务（点击、输入、导航、滚动等）</span>
               </div>
               <div class="feature-item">
-                <span class="feature-icon">🎛️</span>
-                <span class="feature-text"
-                  >控制页面元素（隐藏广告、修改样式等）</span
-                >
+                <span class="feature-icon">📊</span>
+                <span class="feature-text">分析页面内容、提取数据和信息</span>
+              </div>
+              <div class="feature-item">
+                <span class="feature-icon">🌐</span>
+                <span class="feature-text">跨页面连续执行（自动处理页面跳转）</span>
+              </div>
+              <div class="feature-item">
+                <span class="feature-icon">🔍</span>
+                <span class="feature-text">监控网络请求、控制台消息和页面状态</span>
               </div>
               <div class="feature-item">
                 <span class="feature-icon">💬</span>
-                <span class="feature-text">回答各种问题</span>
-              </div>
-              <div class="feature-item">
-                <span class="feature-icon">⚡</span>
-                <span class="feature-text">执行快捷命令</span>
+                <span class="feature-text">回答问题和提供帮助</span>
               </div>
             </div>
             <div class="welcome-action">
               <div class="action-text">
-                试试说<code>"帮助"</code>查看所有可用命令，或直接问我任何问题！
+                直接告诉我你的需求，我会自动分析页面并执行操作！<br>
+                例如："帮我查找Vue官网并打开"、"总结这个页面的内容"、"点击登录按钮"
               </div>
             </div>
           </div>
@@ -89,7 +104,7 @@
             <div v-html="getRenderedContent(message.id)"></div>
           </div>
 
-          <!-- 复制按钮 -->
+          <!-- 消息操作按钮 -->
           <div class="message-actions">
             <el-tooltip
               content="复制消息内容"
@@ -107,6 +122,23 @@
                 <el-icon>
                   <Check v-if="copyStates[message.id]" />
                   <DocumentCopy v-else />
+                </el-icon>
+              </el-button>
+            </el-tooltip>
+            <el-tooltip
+              content="删除此消息"
+              placement="top"
+              :show-after="500"
+            >
+              <el-button
+                class="action-button delete-button"
+                @click="handleDeleteMessage(message.id)"
+                :disabled="props.isProcessing"
+                circle
+                size="small"
+              >
+                <el-icon>
+                  <Delete />
                 </el-icon>
               </el-button>
             </el-tooltip>
@@ -141,7 +173,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, nextTick } from "vue";
+import { ref, watch, onMounted, onUnmounted, nextTick } from "vue";
 import { ElButton, ElScrollbar, ElTooltip, ElIcon } from "element-plus";
 import {
   ArrowDown,
@@ -149,6 +181,7 @@ import {
   Check,
   ArrowRight,
   ArrowDown as ArrowDownIcon,
+  Delete,
 } from "@element-plus/icons-vue";
 import { renderMarkdown } from "../../shared/utils/markdown";
 import { appActions } from "../../shared/stores/appStore";
@@ -275,6 +308,23 @@ const copyMessage = async (message: Message) => {
   } catch (error) {
     console.error("复制失败:", error);
     // 可以在这里添加错误提示
+  }
+};
+
+// 删除消息
+const handleDeleteMessage = (messageId: string) => {
+  appActions.deleteMessage(messageId);
+  // 清除渲染缓存
+  renderedContentCache.value.delete(messageId);
+  renderedContentCache.value.delete(`${messageId}-thinking`);
+};
+
+// 清空所有消息
+const handleClearAll = () => {
+  if (confirm("确定要清空所有消息吗？此操作不可撤销。")) {
+    appActions.clearMessages();
+    // 清除所有渲染缓存
+    renderedContentCache.value.clear();
   }
 };
 
@@ -429,6 +479,19 @@ onMounted(async () => {
   backdrop-filter: blur(20px);
 }
 
+.chat-toolbar {
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(10px);
+}
+
+.clear-all-btn {
+  font-size: 12px;
+}
+
 /* Element Plus 滚动条容器 */
 .messages-scrollbar {
   flex: 1;
@@ -494,6 +557,15 @@ onMounted(async () => {
   padding: 8px 4px;
   opacity: 0;
   transition: opacity 0.2s ease;
+}
+
+.delete-button {
+  color: rgba(239, 68, 68, 0.8) !important;
+}
+
+.delete-button:hover {
+  color: #ef4444 !important;
+  background: rgba(239, 68, 68, 0.1) !important;
 }
 
 .message-item:hover .message-actions {

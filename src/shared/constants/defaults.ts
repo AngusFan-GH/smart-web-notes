@@ -16,7 +16,6 @@ export const DEFAULT_SETTINGS: Settings = {
   maxTokens: 2048,
   temperature: 0.7,
   showProcessingSteps: false,
-  enableSuggestedQuestions: true,
   enableBrowserControl: true,
 } as const;
 

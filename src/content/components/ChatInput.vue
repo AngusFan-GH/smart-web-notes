@@ -47,7 +47,7 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   modelValue: "",
-  placeholder: "请输入您的问题...",
+  placeholder: "告诉我你想做什么，我会自动执行...",
   disabled: false,
   isLoading: false,
 });

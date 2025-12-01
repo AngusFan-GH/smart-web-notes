@@ -13,6 +13,11 @@ export default defineBackground(() => {
   let currentStreamController: AbortController | null = null;
   let isStreaming = false; // 跟踪流式状态
 
+  // 初始化持久连接管理器（自动在构造函数中初始化）
+  import("../src/shared/utils/persistentConnection").then(() => {
+    console.log("✅ 持久连接管理器已初始化");
+  });
+
   // 监听来自Content Script的消息
   chrome.runtime.onMessage.addListener(
     (
@@ -21,6 +26,17 @@ export default defineBackground(() => {
       sendResponse: (response: ChromeResponse) => void
     ) => {
       console.log("Background收到消息:", message.action);
+
+      // 处理 Content Script 就绪通知（保留作为后备，但持久连接会自动管理）
+      if (message.action === "contentScriptReady") {
+        // 持久连接会自动管理连接状态，这里只记录日志
+        const tabId = sender.tab?.id || message.tabId;
+        if (tabId) {
+          console.log(`✅ Background 收到 Content Script 就绪通知 (Tab ${tabId}) - 持久连接会自动管理`);
+        }
+        sendResponse({ success: true });
+        return true;
+      }
 
       // 处理不同类型的消息
       switch (message.action) {
@@ -47,9 +63,6 @@ export default defineBackground(() => {
           handleStopStreaming(sendResponse);
           break;
 
-        case "generateSuggestedQuestions":
-          handleGenerateSuggestedQuestions(message.data, sendResponse);
-          break;
 
         case "injectCSS":
           handleInjectCSS(message.data, sendResponse);
@@ -57,6 +70,93 @@ export default defineBackground(() => {
 
         case "removeCSS":
           handleRemoveCSS(message.data, sendResponse);
+          break;
+
+        case "processAgentGoal":
+          // 异步启动 Agent，立即返回成功
+          (async () => {
+            try {
+              const { agentService } = await import("../src/shared/services/agentService");
+              const { globalTaskManager } = await import("../src/shared/services/globalTaskManager");
+              
+              // 检查是否可以启动新任务
+              if (!globalTaskManager.canStartNewTask()) {
+                const currentTask = globalTaskManager.getCurrentTask();
+                console.warn("⚠️ 已有任务正在运行，拒绝新任务请求");
+                // 通知前端任务被拒绝
+                if (sender.tab?.id) {
+                  chrome.tabs.sendMessage(sender.tab.id, {
+                    action: "agentUpdate",
+                    update: {
+                      type: "warning",
+                      data: `已有任务正在运行: ${currentTask?.goal}，请先停止当前任务`,
+                    },
+                  });
+                }
+                return;
+              }
+              
+              // 从 sender 获取 tabId
+              const tabId = sender.tab?.id;
+              // 生成任务ID
+              const taskId = message.taskId || `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+              
+              await agentService.startGoal(message.goal, {
+                ...message.context,
+                tabId,
+                taskId,
+              });
+            } catch (error) {
+              console.error("Agent 启动失败:", error);
+              // 通知前端启动失败
+              if (sender.tab?.id) {
+                chrome.tabs.sendMessage(sender.tab.id, {
+                  action: "agentUpdate",
+                  update: {
+                    type: "error",
+                    data: error instanceof Error ? error.message : String(error),
+                  },
+                });
+              }
+            }
+          })();
+          sendResponse({ success: true });
+          break;
+
+        case "stopAgent":
+          // 停止 Agent
+          (async () => {
+            try {
+              const { agentService } = await import("../src/shared/services/agentService");
+              await agentService.stop();
+            } catch (error) {
+              console.error("Agent 停止失败:", error);
+            }
+          })();
+          sendResponse({ success: true });
+          break;
+
+        case "getTaskState":
+          // 获取当前任务状态
+          (async () => {
+            try {
+              const { globalTaskManager } = await import("../src/shared/services/globalTaskManager");
+              const taskState = globalTaskManager.getCurrentTask();
+              sendResponse({ success: true, data: taskState });
+            } catch (error) {
+              console.error("获取任务状态失败:", error);
+              sendResponse({ success: false, error: String(error) });
+            }
+          })();
+          return true; // 异步响应
+
+        case "getCurrentTabId":
+          // 获取当前标签页ID（用于 Content Script）
+          if (sender.tab?.id) {
+            sendResponse({ success: true, tabId: sender.tab.id });
+          } else {
+            sendResponse({ success: false, error: "无法获取标签页ID" });
+          }
           break;
 
         case "executeJavaScript":
@@ -377,77 +477,6 @@ export default defineBackground(() => {
     });
   }
 
-  // 生成建议问题
-  async function handleGenerateSuggestedQuestions(
-    data: any,
-    sendResponse: (response: ChromeResponse) => void
-  ) {
-    try {
-      const { prompt, max_tokens = 200, temperature = 0.7 } = data;
-
-      if (!prompt) {
-        sendResponse({
-          success: false,
-          error: "提示词不能为空",
-        });
-        return;
-      }
-
-      // 动态加载apiService
-      const { apiService } = await import("../src/shared/services/apiService");
-
-      // 确保API设置已加载
-      const settings = await chrome.storage.sync.get(null);
-      console.log("Background script读取的设置:", settings);
-      console.log("API配置检查:", {
-        custom_apiKey: !!settings.custom_apiKey,
-        custom_apiBase: !!settings.custom_apiBase,
-        custom_model: !!settings.custom_model,
-        apiType: settings.apiType,
-      });
-
-      if (
-        !settings.custom_apiKey ||
-        !settings.custom_apiBase ||
-        !settings.custom_model ||
-        settings.custom_apiKey.trim() === "" ||
-        settings.custom_apiBase.trim() === "" ||
-        settings.custom_model.trim() === ""
-      ) {
-        console.error("API配置不完整:", {
-          custom_apiKey: settings.custom_apiKey,
-          custom_apiBase: settings.custom_apiBase,
-          custom_model: settings.custom_model,
-        });
-        sendResponse({
-          success: false,
-          error: "API配置未设置或配置不完整",
-        });
-        return;
-      }
-
-      // 设置API配置
-      apiService.setSettings(settings);
-
-      // 调用API生成建议问题
-      const response = await apiService.generateSuggestedQuestions(
-        prompt,
-        max_tokens,
-        temperature
-      );
-
-      sendResponse({
-        success: true,
-        data: response,
-      });
-    } catch (error) {
-      console.error("生成建议问题失败:", error);
-      sendResponse({
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
 
   // 注入CSS
   async function handleInjectCSS(

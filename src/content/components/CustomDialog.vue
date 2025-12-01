@@ -17,27 +17,6 @@
         :is-streaming="appState.isStreaming.value"
       />
 
-      <!-- 推荐问题加载状态 -->
-      <div
-        v-if="
-          isGeneratingSuggestedQuestions && appState.messages.value.length === 0
-        "
-        class="suggested-questions-loading"
-      >
-        <div class="loading-dots">
-          <span class="dot"></span>
-          <span class="dot"></span>
-          <span class="dot"></span>
-        </div>
-        <span class="loading-text">生成推荐问题中</span>
-      </div>
-
-      <!-- 智能问题推荐 -->
-      <SuggestedQuestions
-        :visible="showSuggestedQuestions"
-        :questions="suggestedQuestions.slice(0, 3)"
-        @question-click="useSuggestedQuestion"
-      />
     </div>
 
     <!-- 对话框底部 -->
@@ -101,8 +80,9 @@ import {
   nextTick,
 } from "vue";
 import { appState, appActions } from "../../shared/stores/appStore";
-import { UnifiedCommandExecutor } from "../../shared/services/unifiedCommandExecutor";
-import { useContextStore } from "../../shared/stores/contextStore";
+// 已迁移到 Agent 系统，不再需要 UnifiedCommandExecutor
+// import { UnifiedCommandExecutor } from "../../shared/services/unifiedCommandExecutor";
+// import { useContextStore } from "../../shared/stores/contextStore";
 import {
   handleError,
   getUserFriendlyMessage,
@@ -117,12 +97,10 @@ import {
   errorStep,
 } from "../../shared/utils/userFeedback";
 import { stateManager } from "../../shared/utils/stateManager";
-import { SuggestedQuestionsService } from "../../shared/services/suggestedQuestionsService";
 import DialogHeader from "./DialogHeader.vue";
 import ChatMessages from "./ChatMessages.vue";
 import ChatInput from "./ChatInput.vue";
 import ProcessingSteps from "./ProcessingSteps.vue";
-import SuggestedQuestions from "./SuggestedQuestions.vue";
 
 // 声明chrome类型
 declare const chrome: any;
@@ -145,105 +123,12 @@ const userInput = ref("");
 const chatInputRef = ref();
 const commandSuggestions = ref<string[]>([]);
 
-// 智能问题推荐相关
-const suggestedQuestions = ref<string[]>([]);
-const isGeneratingSuggestedQuestions = ref(false);
-const showSuggestedQuestions = computed(() => {
-  return (
-    appState.messages.value.length === 0 &&
-    suggestedQuestions.value.length > 0 &&
-    appState.settings.value?.enableSuggestedQuestions !== false
-  );
-});
 
 // 服务实例
-const commandExecutor = UnifiedCommandExecutor.getInstance();
-const contextStore = useContextStore();
+// 已迁移到 Agent 系统，不再需要这些实例
+// const commandExecutor = UnifiedCommandExecutor.getInstance();
+// const contextStore = useContextStore();
 
-// 从全局状态获取推荐问题
-function loadSuggestedQuestions() {
-  const globalQuestions = (window as any).suggestedQuestions;
-  if (globalQuestions && Array.isArray(globalQuestions)) {
-    suggestedQuestions.value = globalQuestions;
-    console.log("从全局状态加载推荐问题:", globalQuestions);
-  }
-}
-
-// 处理推荐问题更新事件
-function handleSuggestedQuestionsUpdated(event: any) {
-  const { questions } = event.detail;
-  if (questions && Array.isArray(questions)) {
-    suggestedQuestions.value = questions;
-    console.log("收到推荐问题更新事件:", questions);
-  }
-}
-
-// 生成推荐问题（如果需要）
-async function generateSuggestedQuestionsIfNeeded() {
-  console.log("🔍 CustomDialog generateSuggestedQuestionsIfNeeded 被调用", {
-    enableSuggestedQuestions: appState.settings.value?.enableSuggestedQuestions,
-    showFloatingBall: appState.showFloatingBall.value,
-    messagesLength: appState.messages.value.length,
-  });
-
-  // 检查设置是否启用推荐问题
-  if (appState.settings.value?.enableSuggestedQuestions === false) {
-    console.log("推荐问题功能已禁用，跳过生成");
-    return;
-  }
-
-  // 检查悬浮球是否显示
-  if (!appState.showFloatingBall.value) {
-    console.log("悬浮球已隐藏，跳过推荐问题生成");
-    return;
-  }
-
-  // 检查是否有消息
-  if (appState.messages.value.length > 0) {
-    console.log("已有消息，跳过推荐问题生成");
-    return;
-  }
-
-  try {
-    // 设置加载状态
-    isGeneratingSuggestedQuestions.value = true;
-
-    // 获取页面内容解析函数
-    const parseWebContent = (window as any).parseWebContent;
-    if (!parseWebContent) {
-      console.warn("页面内容解析函数不可用");
-      return;
-    }
-
-    // 获取页面上下文
-    const pageContext = {
-      url: typeof window !== "undefined" ? window.location.href : "",
-      title: typeof document !== "undefined" ? document.title : "",
-    };
-
-    // 生成推荐问题
-    const questions =
-      await SuggestedQuestionsService.generateSuggestedQuestions(
-        parseWebContent,
-        pageContext
-      );
-
-    // 将问题存储到全局状态中
-    (window as any).suggestedQuestions = questions;
-
-    // 更新本地状态
-    suggestedQuestions.value = questions;
-
-    console.log("推荐问题生成完成:", questions);
-  } catch (error) {
-    console.warn("生成推荐问题失败:", error);
-    // 生成失败时保持推荐问题为空
-    suggestedQuestions.value = [];
-  } finally {
-    // 清除加载状态
-    isGeneratingSuggestedQuestions.value = false;
-  }
-}
 
 // 页面上下文
 const pageContext = computed(() => {
@@ -444,8 +329,8 @@ onMounted(async () => {
   await loadDialogPosition();
   await loadDialogSize();
 
-  // 初始化命令执行器
-  commandExecutor.initialize();
+  // 已迁移到 Agent 系统，不再需要初始化命令执行器
+  // commandExecutor.initialize();
 
   // 监听窗口大小变化（使用防抖）
   window.addEventListener("resize", handleWindowResizeDebounced);
@@ -453,36 +338,16 @@ onMounted(async () => {
   // 添加背景点击监听（用于自动隐藏对话框）
   document.addEventListener("mousedown", handleBackgroundClick);
 
-  // 监听推荐问题更新事件
-  window.addEventListener(
-    "suggestedQuestionsUpdated",
-    handleSuggestedQuestionsUpdated
-  );
-
-  // 加载推荐问题
-  loadSuggestedQuestions();
-
-  // 如果全局状态中没有推荐问题，则生成新的
-  if (
-    !(window as any).suggestedQuestions ||
-    (window as any).suggestedQuestions.length === 0
-  ) {
-    generateSuggestedQuestionsIfNeeded();
-  }
 });
 
 // 清理
 onUnmounted(() => {
-  // 清理命令执行器
-  commandExecutor.cleanup();
+  // 已迁移到 Agent 系统，不再需要清理命令执行器
+  // commandExecutor.cleanup();
 
   // 清理事件监听器
   window.removeEventListener("resize", handleWindowResizeDebounced);
   document.removeEventListener("mousedown", handleBackgroundClick);
-  window.removeEventListener(
-    "suggestedQuestionsUpdated",
-    handleSuggestedQuestionsUpdated
-  );
 });
 
 // 防抖处理窗口大小变化
@@ -607,6 +472,35 @@ async function sendMessage() {
   const message = userInput.value.trim();
   if (!message || appState.isProcessing.value) return;
 
+  // 检查是否有正在运行的任务
+  try {
+    const response = await chrome.runtime.sendMessage({
+      action: 'getTaskState'
+    });
+    
+    if (response && response.success && response.data) {
+      const taskState = response.data;
+      if (taskState.isRunning) {
+        // 有任务正在运行，询问用户是否要停止
+        const shouldStop = confirm(
+          `已有任务正在运行: "${taskState.goal}"\n\n是否要停止当前任务并开始新任务？`
+        );
+        
+        if (shouldStop) {
+          // 停止当前任务
+          await chrome.runtime.sendMessage({ action: 'stopAgent' });
+          // 等待一下，确保任务停止
+          await new Promise(resolve => setTimeout(resolve, 500));
+        } else {
+          // 用户选择不停止，取消操作
+          return;
+        }
+      }
+    }
+  } catch (error) {
+    console.warn("检查任务状态失败，继续执行:", error);
+  }
+
   // 清空输入框
   userInput.value = "";
   commandSuggestions.value = [];
@@ -632,25 +526,38 @@ async function sendMessage() {
     // 添加用户消息
     appActions.addMessage(message, true);
 
-    // 使用命令执行器处理消息
-    const result = await commandExecutor.executeCommand(message);
+    // 立即创建AI消息容器（确保每个任务对应一轮对话）
+    // 这样所有Agent的步骤、思考、结果都会追加到这条消息中
+    appActions.addMessage("", false);
+    console.log("✅ 已创建AI消息容器，等待Agent更新");
 
-    if (result.success) {
-      // 只有当消息不为空时才添加AI响应
-      if (result.message && result.message.trim()) {
-        appActions.addMessage(result.message, false);
+    // 生成任务ID
+    const taskId = `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    // 发送 Agent 目标到 Background
+    chrome.runtime.sendMessage({
+      action: 'processAgentGoal',
+      taskId,  // 传递任务ID
+      goal: message,
+      context: {
+        url: window.location.href,
+        title: document.title
       }
-
-      // 只有直接命令才立即重置状态，AI命令让流式处理自己管理状态
-      if (result.type === "direct") {
-        console.log("直接命令执行完成，重置状态");
-        stateManager.reset();
+    }).then((response) => {
+      if (response && response.success) {
+        console.log("Agent 目标已发送:", message, "Task ID:", taskId);
+        // Agent 会通过 agentUpdate 消息更新 UI
       } else {
-        console.log("AI命令已发送，等待流式处理管理状态");
+        throw new Error("Agent 启动失败");
       }
-    } else {
-      throw new Error(result.message || "命令执行失败");
-    }
+    }).catch((error) => {
+      throw error;
+    });
+
+    /*
+    // 使用命令执行器处理消息（旧逻辑，已废弃）
+    const result = await commandExecutor.executeCommand(message);
+    */
   } catch (error) {
     console.error("发送消息失败:", error);
 
@@ -694,13 +601,9 @@ function handleKeydown(e: Event) {
 
 // 处理输入变化
 function handleInputChange() {
-  if (userInput.value.length > 0) {
-    commandSuggestions.value = commandExecutor.getCommandSuggestions(
-      userInput.value
-    );
-  } else {
-    commandSuggestions.value = [];
-  }
+  // 已迁移到 Agent 系统，不再需要命令建议
+  // Agent 系统会直接理解用户意图，不需要预定义命令
+  commandSuggestions.value = [];
 }
 
 // 选择建议
@@ -714,13 +617,50 @@ function selectSuggestion(suggestion: string) {
 
 // 停止生成
 async function stopGeneration() {
-  console.log("用户点击停止生成");
-  console.log("停止前状态:", stateManager.getState());
+  console.log("🛑 用户点击停止生成");
+
+  // 首先检查是否有正在运行的任务
+  try {
+    const taskStateResponse = await chrome.runtime.sendMessage({
+      action: "getTaskState",
+    });
+    
+    if (taskStateResponse && taskStateResponse.success && taskStateResponse.data) {
+      const taskState = taskStateResponse.data;
+      if (taskState.isRunning) {
+        console.log("🛑 检测到正在运行的任务，停止任务:", taskState.taskId);
+        
+        // 停止Agent任务
+        try {
+          const stopResponse = await chrome.runtime.sendMessage({
+            action: "stopAgent",
+          });
+          console.log("✅ Agent停止响应:", stopResponse);
+        } catch (error) {
+          console.error("❌ 通知Agent停止失败:", error);
+        }
+      } else {
+        console.log("ℹ️ 没有正在运行的任务");
+      }
+    }
+  } catch (error) {
+    console.warn("检查任务状态失败，继续停止操作:", error);
+    // 即使检查失败，也尝试停止
+    try {
+      await chrome.runtime.sendMessage({
+        action: "stopAgent",
+      });
+    } catch (e) {
+      console.error("停止Agent失败:", e);
+    }
+  }
 
   // 使用stateManager停止处理
   stateManager.stopStreaming();
 
-  console.log("停止后状态:", stateManager.getState());
+  // 更新UI状态
+  appActions.setGenerating(false);
+  appActions.setStreaming(false);
 
   // 清空输入框
   userInput.value = "";
@@ -728,7 +668,7 @@ async function stopGeneration() {
     chatInputRef.value.clear();
   }
 
-  // 通知Background Script停止流式请求
+  // 通知Background Script停止流式请求（兼容旧代码）
   try {
     const response = await chrome.runtime.sendMessage({
       action: "stopStreaming",
@@ -741,16 +681,9 @@ async function stopGeneration() {
   // 通知App.vue清除流式超时
   window.dispatchEvent(new CustomEvent("stopStreaming"));
 
-  console.log("已停止生成");
+  console.log("✅ 已停止生成");
 }
 
-// 注意：推荐问题生成现在由App.vue统一管理
-
-// 使用建议的问题
-function useSuggestedQuestion(question: string) {
-  userInput.value = question;
-  sendMessage();
-}
 
 // 处理对话框鼠标按下
 function handleDialogMouseDown(event: MouseEvent) {
@@ -1280,53 +1213,6 @@ onUnmounted(() => {
   }
 }
 
-/* 推荐问题加载状态样式 */
-.suggested-questions-loading {
-  position: absolute;
-  bottom: 20px;
-  left: 20px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 12px;
-  z-index: 10;
-  animation: fadeInUp 0.3s ease-out;
-}
-
-.loading-dots {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-}
-
-.dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #409eff, #67c23a);
-  animation: dotPulse 1.4s ease-in-out infinite both;
-}
-
-.dot:nth-child(1) {
-  animation-delay: -0.32s;
-}
-
-.dot:nth-child(2) {
-  animation-delay: -0.16s;
-}
-
-.dot:nth-child(3) {
-  animation-delay: 0s;
-}
-
-.loading-text {
-  color: #909399;
-  font-size: 13px;
-  font-weight: 400;
-  letter-spacing: 0.5px;
-  opacity: 0.8;
-  animation: textFade 2s ease-in-out infinite;
-}
 
 /* 动画效果 */
 @keyframes dotPulse {

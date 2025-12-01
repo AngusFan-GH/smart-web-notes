@@ -1,9 +1,19 @@
-// 智能意图识别服务
-import {
-  aiIntentService,
-  type AIIntentRequest,
-  type AIIntentResponse,
-} from "./aiIntentService";
+// 智能意图识别服务（合并了 aiIntentService 的功能）
+import { apiService } from "./apiService";
+
+// 合并的AI意图识别接口
+interface AIIntentRequest {
+  question: string;
+  context?: string;
+  url?: string;
+}
+
+interface AIIntentResponse {
+  intent: string;
+  confidence: number;
+  reasoning: string;
+  needsFullHTML: boolean;
+}
 
 export interface IntentRecognitionResult {
   intent: string;
@@ -59,7 +69,7 @@ export class IntentRecognitionService {
     // 如果规则引擎识别为"question"且启用了AI，则尝试AI识别
     if (this.useAI && result.intent === "question") {
       try {
-        const aiResponse = await aiIntentService.recognizeIntent({
+        const aiResponse = await this.recognizeIntentWithAI({
           question: request.question,
           context: request.context,
           url: request.url,

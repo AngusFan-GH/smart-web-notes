@@ -45,47 +45,6 @@ export class ApiService {
     return { valid: true };
   }
 
-  public async generateSuggestedQuestions(
-    prompt: string,
-    max_tokens: number = 200,
-    temperature: number = 0.7
-  ): Promise<any> {
-    try {
-      // 验证配置
-      const validation = this.validateSettings();
-      if (!validation.valid) {
-        throw new Error(validation.error);
-      }
-
-      // 获取API配置
-      const { custom_apiBase, custom_apiKey, custom_model } = this.settings!;
-
-      // 构建请求
-      const request: ApiRequest = {
-        model: custom_model,
-        messages: [
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
-        max_tokens,
-        temperature,
-        stream: false, // 建议问题不需要流式
-      };
-
-      // 发送请求
-      const response = await this.sendNonStreamRequest(
-        custom_apiBase,
-        custom_apiKey,
-        request
-      );
-
-      return response;
-    } catch (error) {
-      throw new Error(error instanceof Error ? error.message : String(error));
-    }
-  }
 
   public async generateAnswer(
     question: string,
@@ -524,6 +483,71 @@ export class ApiService {
     }
 
     return await response.json();
+  }
+
+  /**
+   * Agent 专用的聊天方法
+   * 支持 System Prompt 和 JSON 模式
+   */
+  public async chatAgent(params: {
+    systemPrompt: string;
+    userPrompt: string;
+    temperature?: number;
+  }): Promise<string> {
+    try {
+      // 验证配置
+      const validation = this.validateSettings();
+      if (!validation.valid) {
+        throw new Error(validation.error);
+      }
+
+      // 获取API配置
+      const { custom_apiBase, custom_apiKey, custom_model } = this.settings!;
+
+      // 构建消息
+      const messages: Array<{
+        role: "system" | "user" | "assistant";
+        content: string;
+      }> = [
+        {
+          role: "system",
+          content: params.systemPrompt,
+        },
+        {
+          role: "user",
+          content: params.userPrompt,
+        },
+      ];
+
+      // 构建请求
+      const request: ApiRequest = {
+        model: custom_model,
+        messages,
+        max_tokens: this.settings!.maxTokens || 2048,
+        temperature: params.temperature ?? this.settings!.temperature ?? 0.7,
+        stream: false, // Agent 需要完整响应，不使用流式
+      };
+
+      // 发送非流式请求
+      const response = await this.sendNonStreamRequest(
+        custom_apiBase,
+        custom_apiKey,
+        request
+      );
+
+      // 提取响应内容
+      const content = response.choices?.[0]?.message?.content;
+      if (!content) {
+        throw new Error("API 响应中没有内容");
+      }
+
+      return content;
+    } catch (error) {
+      console.error("chatAgent 调用失败:", error);
+      throw new Error(
+        error instanceof Error ? error.message : String(error)
+      );
+    }
   }
 }
 

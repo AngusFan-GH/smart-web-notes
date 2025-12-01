@@ -7,7 +7,7 @@ export interface StorageData {
 export class ChromeStorage {
   static async get(keys?: string | string[] | null): Promise<StorageData> {
     return new Promise((resolve, reject) => {
-      chrome.storage.sync.get(keys, (result) => {
+      chrome.storage.local.get(keys, (result) => {
         if (chrome.runtime.lastError) {
           reject(chrome.runtime.lastError);
         } else {
@@ -19,7 +19,7 @@ export class ChromeStorage {
 
   static async set(items: StorageData): Promise<void> {
     return new Promise((resolve, reject) => {
-      chrome.storage.sync.set(items, () => {
+      chrome.storage.local.set(items, () => {
         if (chrome.runtime.lastError) {
           reject(chrome.runtime.lastError);
         } else {
@@ -31,7 +31,7 @@ export class ChromeStorage {
 
   static async remove(keys: string | string[]): Promise<void> {
     return new Promise((resolve, reject) => {
-      chrome.storage.sync.remove(keys, () => {
+      chrome.storage.local.remove(keys, () => {
         if (chrome.runtime.lastError) {
           reject(chrome.runtime.lastError);
         } else {
@@ -43,7 +43,7 @@ export class ChromeStorage {
 
   static async clear(): Promise<void> {
     return new Promise((resolve, reject) => {
-      chrome.storage.sync.clear(() => {
+      chrome.storage.local.clear(() => {
         if (chrome.runtime.lastError) {
           reject(chrome.runtime.lastError);
         } else {

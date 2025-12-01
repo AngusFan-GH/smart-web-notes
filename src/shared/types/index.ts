@@ -21,7 +21,6 @@ export interface Settings {
   maxTokens: number;
   temperature: number;
   showProcessingSteps: boolean;
-  enableSuggestedQuestions: boolean;
   enableBrowserControl: boolean;
 }
 
@@ -49,15 +48,53 @@ export interface ChromeMessage {
     | "generateAnswer"
     | "testCommunication"
     | "getSettings"
-    | "updateSettings";
+    | "updateSettings"
+    | "streamChunk"
+    | "streamError"
+    | "openDialog"
+    | "closeDialog"
+    | "executeJavaScript"
+    | "getDialogStatus"
+    | "toggleFloatingBall"
+    | "getDOMInfo"
+    | "executeAgentAction"
+    | "getPageState"
+    | "takeSnapshot"
+    | "getConsoleMessages"
+    | "getNetworkRequests"
+    | "resizePage"
+    | "emulate"
+    | "performanceStartTrace"
+    | "performanceStopTrace"
+    | "performanceAnalyzeInsight"
+    | "getNetworkRequest"
+    | "listNetworkRequests"
+    | "listConsoleMessages"
+    | "getConsoleMessage"
+    | "agentUpdate"
+    | "processAgentGoal"
+    | "stopAgent"
+    | "getTaskState"
+    | "stopStreaming"
+    | "injectCSS"
+    | "removeCSS"
+    | "contentScriptReady"
+    | "ping"
+    | "getCurrentTabId";
   data?: any;
   tabId?: number | string;
+  goal?: string;
+  taskId?: string;
+  context?: { url: string; title: string };
+  showFloatingBall?: boolean;
 }
 
 export interface ChromeResponse {
   success: boolean;
   data?: any;
   error?: string;
+  isOpen?: boolean; // 用于 getDialogStatus
+  ready?: boolean; // 用于 ping 响应
 }
 
 // Chrome API 声明

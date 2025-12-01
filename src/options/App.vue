@@ -146,17 +146,6 @@
                 </el-text>
               </el-form-item>
 
-              <el-form-item label="智能推荐问题">
-                <el-switch
-                  v-model="settings.enableSuggestedQuestions"
-                  active-text="启用"
-                  inactive-text="禁用"
-                />
-                <el-text class="help-text" type="info" size="small">
-                  在对话框打开时自动生成基于页面内容的推荐问题
-                </el-text>
-              </el-form-item>
-
               <el-form-item label="浏览器控制功能">
                 <el-switch
                   v-model="settings.enableBrowserControl"
