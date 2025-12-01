@@ -445,10 +445,29 @@ export class AgentService {
             console.warn(
               `⚠️ 连续 ${stableSteps} 步页面状态（URL + 元素数量）无变化，任务将自动停止以避免死循环`
             );
-            this.notifyFrontend(
-              "warning",
-              "检测到页面在多步操作后仍无明显变化，任务已自动结束以避免重复操作"
-            );
+
+            // 简单判断：如果用户目标看起来是「跳转 / 打开 某个页面」，且页面已稳定，
+            // 则友好地认为任务已完成，而不是仅仅发出警告。
+            const goal = this.currentContext.goal || "";
+            const isNavigationGoal =
+              /跳转|打开|进入|访问/.test(goal) &&
+              /首页|官网|页面|site|website|home/i.test(goal);
+
+            if (isNavigationGoal) {
+              const finalUrl = this.currentContext.url;
+              const doneText = `已根据你的指令完成页面跳转，当前页面地址为：\n\n\`${finalUrl}\``;
+              console.log("✅ 检测到导航类目标且页面已稳定，自动标记为任务完成:", {
+                goal,
+                finalUrl,
+              });
+              this.notifyFrontend("done", doneText);
+            } else {
+              this.notifyFrontend(
+                "warning",
+                "检测到页面在多步操作后仍无明显变化，任务已自动结束以避免重复操作"
+              );
+            }
+
             break;
           }
         }
@@ -457,11 +476,24 @@ export class AgentService {
         await new Promise((r) => setTimeout(r, 1000));
         
       } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
         console.error(`❌ Step ${stepId} 出错:`, error);
-        this.notifyFrontend("error", `步骤 ${stepId} 出错: ${error instanceof Error ? error.message : String(error)}`);
+        this.notifyFrontend("error", `步骤 ${stepId} 出错: ${errorMsg}`);
         
-        // 单步错误不中断循环，继续尝试
-        await new Promise(r => setTimeout(r, 1000));
+        // 如果是 LLM / 网络相关的致命错误，直接结束任务，避免无效循环
+        if (
+          errorMsg.includes("Failed to fetch") ||
+          errorMsg.toLowerCase().includes("networkerror") ||
+          errorMsg.toLowerCase().includes("network error")
+        ) {
+          console.error("❌ 检测到致命的网络/LLM 错误，任务将立即停止");
+          // 终止循环，让外层 startGoal 捕获并标记任务失败
+          this.isRunning = false;
+          break;
+        }
+
+        // 单步非致命错误：短暂等待后继续尝试后续步骤
+        await new Promise((r) => setTimeout(r, 1000));
       }
     }
 
@@ -517,7 +549,7 @@ export class AgentService {
   private async think(domSnapshot: InteractiveElement[]): Promise<{ thought: string; action: AgentAction }> {
     if (!this.currentContext) throw new Error("No context");
 
-    // 构建 System Prompt
+    // 构建 System Prompt - 对齐 chrome-devtools-mcp 工具定义
     const systemPrompt = `你是一个浏览器自动化 Agent。你的目标是在当前网页上帮助用户完成他们的请求。
 
 你将收到当前页面的状态（交互元素树），每个元素都有一个唯一的数字 ID。
@@ -525,54 +557,59 @@ export class AgentService {
 
 ⚠️ 重要：你必须直接返回纯 JSON 对象，不要使用 markdown 代码块包裹，不要添加任何解释文字。
 
-可用操作（工具）：
-**基础操作**：
-- { "type": "click", "elementId": <id>, "reason": "为什么点击" } : 点击一个元素
-- { "type": "type", "elementId": <id>, "text": "<文本>", "submit": <bool>, "reason": "为什么输入" } : 在输入框中输入文本
-- { "type": "scroll", "direction": "up"|"down"|"top"|"bottom", "reason": "为什么滚动" } : 滚动页面
-- { "type": "wait", "duration": <毫秒>, "reason": "为什么等待" } : 等待一段时间
-- { "type": "navigate", "url": "<URL>", "reason": "为什么导航" } : 导航到新页面
-- { "type": "hover", "elementId": <id>, "reason": "为什么悬停" } : 悬停在一个元素上
-- { "type": "drag", "fromElementId": <id>, "toElementId": <id>, "reason": "为什么拖拽" } : 拖拽元素
-- { "type": "press_key", "key": "<按键>", "elementId": <id>, "modifiers": ["Control"], "reason": "为什么按键" } : 按下键盘按键
+可用工具（按功能分类，对齐 chrome-devtools-mcp）：
 
-**设备与页面**：
-- { "type": "emulate", "device": { "name": "iPhone 12", "viewport": { "width": 390, "height": 844, "deviceScaleFactor": 3, "isMobile": true, "hasTouch": true } }, "reason": "为什么模拟设备" } : 模拟设备（移动设备、平板等）
+**Navigation (导航)**：
+- { "type": "navigate", "url": "<URL>", "reason": "为什么导航" } : 导航到新页面
+
+**DOM & Interaction (DOM 操作与交互)**：
+- { "type": "click", "elementId": <id>, "reason": "为什么点击" } : 点击一个元素
+- { "type": "type", "elementId": <id>, "text": "<文本>", "submit": <bool>, "reason": "为什么输入" } : 在输入框中输入文本（submit: true 表示输入后提交）
+- { "type": "scroll", "direction": "up"|"down"|"top"|"bottom", "amount": <像素>, "reason": "为什么滚动" } : 滚动页面
+- { "type": "wait", "duration": <毫秒>, "reason": "为什么等待" } : 等待一段时间
+- { "type": "wait_for_element", "selector": "<CSS选择器>", "elementId": <id>, "timeout": <毫秒>, "visible": <bool>, "reason": "为什么等待元素" } : 等待元素出现
+- { "type": "extract_text", "selector": "<CSS选择器>", "elementId": <id>, "mode": "text"|"html"|"markdown", "reason": "为什么提取文本" } : 提取元素文本
+- { "type": "extract_links", "selector": "<CSS选择器>", "filter": { "text": "<文本>", "url": "<URL>" }, "reason": "为什么提取链接" } : 提取页面链接
+- { "type": "extract_images", "selector": "<CSS选择器>", "includeDataUrl": <bool>, "reason": "为什么提取图片" } : 提取页面图片
+- { "type": "get_element_info", "elementId": <id>, "includeChildren": <bool>, "reason": "为什么获取元素信息" } : 获取元素详细信息
+- { "type": "take_snapshot", "reason": "为什么获取快照" } : 获取可访问性树快照（包含交互元素的 elementId 映射）
+
+**Debugging (调试)**：
+- { "type": "evaluate_script", "script": "<JavaScript代码>", "description": "脚本作用描述", "reason": "为什么执行脚本" } : 执行JavaScript代码（推荐使用此工具名）
+- { "type": "execute_script", "script": "<JavaScript代码>", "description": "脚本作用描述", "reason": "为什么执行脚本" } : 执行JavaScript代码（兼容旧接口）
+- { "type": "take_screenshot", "fullPage": <bool>, "format": "png"|"jpeg", "reason": "为什么截图" } : 截图
+- { "type": "get_console_message", "messageId": "<消息ID>", "reason": "为什么获取控制台消息" } : 获取单个控制台消息
+- { "type": "list_console_messages", "level": "all"|"error"|"warning"|"info"|"log"|"debug", "limit": <数量>, "reason": "为什么列出控制台消息" } : 列出所有控制台消息（推荐使用此工具名）
+- { "type": "get_console_messages", "level": "all"|"error"|"warning"|"info", "limit": <数量>, "reason": "为什么获取控制台消息" } : 获取控制台消息（兼容旧接口）
+
+**Emulation (设备模拟)**：
+- { "type": "emulate", "device": { "name": "iPhone 12", "userAgent": "<UA>", "viewport": { "width": 390, "height": 844, "deviceScaleFactor": 3, "isMobile": true, "hasTouch": true } }, "reason": "为什么模拟设备" } : 模拟设备（移动设备、平板等）
 - { "type": "resize_page", "width": <宽度>, "height": <高度>, "reason": "为什么调整页面大小" } : 调整页面大小
 
-**性能分析**：
-- { "type": "performance_start_trace", "categories": ["performance", "network"], "reason": "为什么开始性能追踪" } : 开始性能追踪
-- { "type": "performance_stop_trace", "reason": "为什么停止性能追踪" } : 停止性能追踪
-- { "type": "performance_analyze_insight", "traceId": "<追踪ID>", "reason": "为什么分析性能" } : 分析性能数据并获取洞察
-
-**网络请求**：
+**Network (网络)**：
 - { "type": "get_network_request", "requestId": "<请求ID>", "reason": "为什么获取网络请求" } : 获取单个网络请求详情
-- { "type": "list_network_requests", "filter": { "url": "<URL>", "method": "GET", "status": 200, "resourceType": "xhr" }, "limit": 100, "reason": "为什么列出网络请求" } : 列出所有网络请求
-- { "type": "get_network_requests", "filter": {...}, "limit": 100, "reason": "为什么获取网络请求" } : 获取网络请求（兼容旧接口）
+- { "type": "list_network_requests", "filter": { "url": "<URL>", "method": "GET"|"POST", "status": <状态码>, "resourceType": "document"|"script"|"stylesheet"|"image"|"xhr"|"fetch" }, "limit": <数量>, "reason": "为什么列出网络请求" } : 列出所有网络请求（推荐使用此工具名）
+- { "type": "get_network_requests", "filter": { "url": "<URL>", "method": "GET", "status": <状态码> }, "limit": <数量>, "reason": "为什么获取网络请求" } : 获取网络请求（兼容旧接口）
 
-**控制台消息**：
-- { "type": "get_console_message", "messageId": "<消息ID>", "reason": "为什么获取控制台消息" } : 获取单个控制台消息
-- { "type": "list_console_messages", "level": "error"|"warning"|"info"|"all", "limit": 100, "reason": "为什么列出控制台消息" } : 列出所有控制台消息
-- { "type": "get_console_messages", "level": "error", "limit": 50, "reason": "为什么获取控制台消息" } : 获取控制台消息（兼容旧接口）
+**Performance (性能)**：
+- { "type": "performance_start_trace", "categories": ["performance", "network"], "reason": "为什么开始性能追踪" } : 开始性能追踪
+- { "type": "performance_stop_trace", "reason": "为什么停止性能追踪" } : 停止性能追踪并返回 traceId
+- { "type": "performance_analyze_insight", "traceId": "<追踪ID>", "reason": "为什么分析性能" } : 分析性能数据并获取洞察（不提供 traceId 则分析最新的追踪）
 
-**调试工具**：
-- { "type": "take_screenshot", "fullPage": true, "format": "png", "reason": "为什么截图" } : 截图
-- { "type": "take_snapshot", "reason": "为什么获取快照" } : 获取可访问性树快照
-- { "type": "execute_script", "script": "<JavaScript代码>", "description": "脚本作用描述", "reason": "为什么执行脚本" } : 执行JavaScript代码
-
-**完成**：
+**Task Completion (任务完成)**：
 - { "type": "done", "text": "<总结>", "reason": "为什么完成" } : 任务完成，提供总结
 
-规则：
+执行规则：
 1. 只能使用交互元素树中提供的 element ID，不要编造 ID
-2. 如果目标是信息性的（如"总结这个页面"），提取内容后立即使用 "done" 操作
-3. 在思考过程中要简洁明了
-4. 如果元素不在视口内（inViewport: false），先滚动到该元素附近
+2. 如果目标是信息性的（如"总结这个页面"），先使用 extract_text 或 take_snapshot 提取内容，然后立即使用 "done" 操作
+3. 在思考过程中要简洁明了，说明为什么选择这个操作
+4. 如果元素不在视口内（inViewport: false），先使用 scroll 滚动到该元素附近
 5. **重要：检查执行历史，避免重复操作同一个元素（elementId）。如果历史中显示已经点击过某个 elementId，且操作成功，不要再点击同一个元素。**
 6. **如果点击操作后页面没有明显变化（elementCountChanged: false），说明操作可能无效，应该尝试其他方法或等待更长时间。**
-7. 如果连续失败，尝试不同的策略
+7. 如果连续失败，尝试不同的策略（例如：使用 wait_for_element 等待元素出现后再操作）
 8. 如果操作成功但目标未达成，检查是否有新的元素出现（如弹窗、表单等），优先操作新出现的元素
-9. 必须返回有效的 JSON 对象，格式：{"thought": "...", "action": {...}}`;
+9. 必须返回有效的 JSON 对象，格式：{"thought": "...", "action": {...}}
+10. 优先使用推荐的工具名（如 evaluate_script、list_network_requests、list_console_messages），兼容旧接口的工具名也可以使用`;
 
     // 构建 User Prompt（包含目标和历史）
     // 包含更详细的历史信息，特别是 elementId，避免重复操作

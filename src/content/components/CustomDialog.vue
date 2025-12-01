@@ -526,11 +526,6 @@ async function sendMessage() {
     // 添加用户消息
     appActions.addMessage(message, true);
 
-    // 立即创建AI消息容器（确保每个任务对应一轮对话）
-    // 这样所有Agent的步骤、思考、结果都会追加到这条消息中
-    appActions.addMessage("", false);
-    console.log("✅ 已创建AI消息容器，等待Agent更新");
-
     // 生成任务ID
     const taskId = `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 

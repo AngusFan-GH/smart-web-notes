@@ -20,9 +20,6 @@ importers:
       '@types/markdown-it':
         specifier: ^14.1.2
         version: 14.1.2
-      chrome-inject-eval:
-        specifier: ^1.0.4
-        version: 1.0.4
       dompurify:
         specifier: ^3.3.0
         version: 3.3.0
@@ -967,9 +964,6 @@ packages:
   chokidar@4.0.3:
     resolution: {integrity: sha512-Qgzu8kfBvo+cA4962jnP1KkS6Dop5NS6g7R5LFYJr4b8Ub94PPQXUksCw9PvXoeXPRRddRNC5C1JQUR2SMGtnA==}
     engines: {node: '>= 14.16.0'}
-
-  chrome-inject-eval@1.0.4:
-    resolution: {integrity: sha512-SFyqimJcfrMMrVs4Hi7xsLw91HoOQeq0BZz8dO2/KmFA22DBv1vXAR7VWGjeDftVKrEBoPKSy8/y2tYw02/mNg==}
 
   chrome-launcher@1.2.0:
     resolution: {integrity: sha512-JbuGuBNss258bvGil7FT4HKdC3SC2K7UAEUqiPy3ACS3Yxo3hAW6bvFpCu2HsIJLgTqxgEX6BkujvzZfLpUD0Q==}
@@ -3127,11 +3121,6 @@ snapshots:
   chokidar@4.0.3:
     dependencies:
       readdirp: 4.1.2
-
-  chrome-inject-eval@1.0.4:
-    dependencies:
-      '@babel/standalone': 7.28.4
-      eval5: 1.4.8
 
   chrome-launcher@1.2.0:
     dependencies:

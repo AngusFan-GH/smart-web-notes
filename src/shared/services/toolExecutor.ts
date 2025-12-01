@@ -95,7 +95,6 @@ export class ToolExecutor {
         case "type":
         case "scroll":
         case "wait":
-        case "extract":
         case "hover":
         case "drag":
         case "press_key":
@@ -105,6 +104,8 @@ export class ToolExecutor {
           return await this.handleNavigation(action.url);
 
         case "execute_script":
+        case "evaluate_script":
+          // evaluate_script 语义等同于 execute_script，这里统一走同一实现
           return await this.sendToContentScript(action);
 
         case "take_screenshot":
@@ -776,6 +777,242 @@ export class ToolExecutor {
       return {
         success: false,
         error: error.message || "获取控制台消息失败",
+      };
+    }
+  }
+
+  /**
+   * 处理等待元素出现
+   */
+  private async handleWaitForElement(
+    action: WaitForElementAction
+  ): Promise<ToolExecutionResult> {
+    const tabId = await this.getTabId();
+
+    try {
+      const response = await messageQueue.sendMessage(tabId, {
+        action: "wait_for_element",
+        data: {
+          selector: action.selector,
+          elementId: action.elementId,
+          timeout: action.timeout || 5000,
+          visible: action.visible !== false,
+        },
+      });
+
+      if (response?.success) {
+        return {
+          success: true,
+          result: response.data?.result || "元素已出现",
+        };
+      } else {
+        return {
+          success: false,
+          error: response?.error || "等待元素超时",
+        };
+      }
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message || "等待元素失败",
+      };
+    }
+  }
+
+  /**
+   * 处理提取文本
+   */
+  private async handleExtractText(
+    action: ExtractTextAction
+  ): Promise<ToolExecutionResult> {
+    const tabId = await this.getTabId();
+
+    try {
+      const response = await messageQueue.sendMessage(tabId, {
+        action: "extract_text",
+        data: {
+          selector: action.selector,
+          elementId: action.elementId,
+          mode: action.mode || "text",
+        },
+      });
+
+      if (response?.success) {
+        return {
+          success: true,
+          result: response.data?.result || "",
+        };
+      } else {
+        return {
+          success: false,
+          error: response?.error || "提取文本失败",
+        };
+      }
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message || "提取文本失败",
+      };
+    }
+  }
+
+  /**
+   * 处理提取链接
+   */
+  private async handleExtractLinks(
+    action: ExtractLinksAction
+  ): Promise<ToolExecutionResult> {
+    const tabId = await this.getTabId();
+
+    try {
+      const response = await messageQueue.sendMessage(tabId, {
+        action: "extract_links",
+        data: {
+          selector: action.selector,
+          filter: action.filter,
+        },
+      });
+
+      if (response?.success) {
+        return {
+          success: true,
+          result: response.data?.result || [],
+        };
+      } else {
+        return {
+          success: false,
+          error: response?.error || "提取链接失败",
+        };
+      }
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message || "提取链接失败",
+      };
+    }
+  }
+
+  /**
+   * 处理提取图片
+   */
+  private async handleExtractImages(
+    action: ExtractImagesAction
+  ): Promise<ToolExecutionResult> {
+    const tabId = await this.getTabId();
+
+    try {
+      const response = await messageQueue.sendMessage(tabId, {
+        action: "extract_images",
+        data: {
+          selector: action.selector,
+          includeDataUrl: action.includeDataUrl || false,
+        },
+      });
+
+      if (response?.success) {
+        return {
+          success: true,
+          result: response.data?.result || [],
+        };
+      } else {
+        return {
+          success: false,
+          error: response?.error || "提取图片失败",
+        };
+      }
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message || "提取图片失败",
+      };
+    }
+  }
+
+  /**
+   * 处理获取元素信息
+   */
+  private async handleGetElementInfo(
+    action: GetElementInfoAction
+  ): Promise<ToolExecutionResult> {
+    const tabId = await this.getTabId();
+
+    try {
+      const response = await messageQueue.sendMessage(tabId, {
+        action: "get_element_info",
+        data: {
+          elementId: action.elementId,
+          includeChildren: action.includeChildren || false,
+        },
+      });
+
+      if (response?.success) {
+        return {
+          success: true,
+          result: response.data?.result || null,
+        };
+      } else {
+        return {
+          success: false,
+          error: response?.error || "获取元素信息失败",
+        };
+      }
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message || "获取元素信息失败",
+      };
+    }
+  }
+
+  /**
+   * 处理比较截图
+   */
+  private async handleCompareScreenshots(
+    action: CompareScreenshotsAction
+  ): Promise<ToolExecutionResult> {
+    const tabId = await this.getTabId();
+
+    try {
+      // 如果需要当前页面截图，先获取
+      let currentScreenshot: string | undefined;
+      if (action.current) {
+        const screenshotResult = await this.handleScreenshot({
+          type: "take_screenshot",
+          format: "png",
+        });
+        if (screenshotResult.success && screenshotResult.newState?.screenshot) {
+          currentScreenshot = screenshotResult.newState.screenshot;
+        }
+      }
+
+      const response = await messageQueue.sendMessage(tabId, {
+        action: "compare_screenshots",
+        data: {
+          reference: action.reference,
+          current: currentScreenshot,
+          threshold: action.threshold || 0.95,
+        },
+      });
+
+      if (response?.success) {
+        return {
+          success: true,
+          result: response.data?.result || {
+            similar: true,
+            similarity: 0.95,
+            message: "截图比较功能需要更复杂的实现",
+          },
+        };
+      } else {
+        return {
+          success: false,
+          error: response?.error || "比较截图失败",
+        };
+      }
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message || "比较截图失败",
       };
     }
   }

@@ -212,12 +212,29 @@ const renderedContentCache = ref<Map<string, string>>(new Map());
 // 复制状态管理
 const copyStates = ref<Record<string, boolean>>({});
 
+// 存储消息内容的原始值，用于检测内容变化
+const messageContentCache = ref<Map<string, string>>(new Map());
+
 // 获取渲染内容（同步）
 const getRenderedContent = (messageId: string): string => {
   const message = props.messages.find((m) => m.id === messageId);
   if (!message) return "";
 
-  // 如果没有缓存，同步渲染（对于用户消息或简单文本）
+  // 检查内容是否已更新（通过比较原始内容）
+  const cachedContent = messageContentCache.value.get(messageId);
+  const hasContentChanged = cachedContent !== message.content;
+
+  // 如果内容已更新，清除渲染缓存
+  if (hasContentChanged && renderedContentCache.value.has(messageId)) {
+    renderedContentCache.value.delete(messageId);
+    // 更新内容缓存
+    messageContentCache.value.set(messageId, message.content);
+  } else if (!cachedContent) {
+    // 首次缓存原始内容
+    messageContentCache.value.set(messageId, message.content);
+  }
+
+  // 如果没有渲染缓存，异步渲染并返回临时内容
   if (!renderedContentCache.value.has(messageId)) {
     // 对于流式更新的消息，立即渲染
     renderMarkdown(message.content)
@@ -233,12 +250,15 @@ const getRenderedContent = (messageId: string): string => {
         });
       });
 
-    // 返回临时内容
+    // 返回临时内容（纯文本，简单格式化）
     return message.content.replace(/\n/g, "<br>");
   }
 
   return renderedContentCache.value.get(messageId) || message.content;
 };
+
+// 存储思考内容的原始值
+const thinkingContentCache = ref<Map<string, string>>(new Map());
 
 // 获取思考内容渲染（同步）
 const getRenderedThinkingContent = (messageId: string): string => {
@@ -247,7 +267,21 @@ const getRenderedThinkingContent = (messageId: string): string => {
 
   const cacheKey = `${messageId}-thinking`;
 
-  // 如果没有缓存，同步渲染
+  // 检查思考内容是否已更新
+  const cachedThinkingContent = thinkingContentCache.value.get(cacheKey);
+  const hasThinkingContentChanged = cachedThinkingContent !== message.thinkingContent;
+
+  // 如果内容已更新，清除渲染缓存
+  if (hasThinkingContentChanged && renderedContentCache.value.has(cacheKey)) {
+    renderedContentCache.value.delete(cacheKey);
+    // 更新内容缓存
+    thinkingContentCache.value.set(cacheKey, message.thinkingContent);
+  } else if (!cachedThinkingContent) {
+    // 首次缓存原始内容
+    thinkingContentCache.value.set(cacheKey, message.thinkingContent);
+  }
+
+  // 如果没有渲染缓存，异步渲染并返回临时内容
   if (!renderedContentCache.value.has(cacheKey)) {
     // 对于流式更新的思考内容，立即渲染
     renderMarkdown(message.thinkingContent)
@@ -314,17 +348,21 @@ const copyMessage = async (message: Message) => {
 // 删除消息
 const handleDeleteMessage = (messageId: string) => {
   appActions.deleteMessage(messageId);
-  // 清除渲染缓存
+  // 清除渲染缓存和内容缓存
   renderedContentCache.value.delete(messageId);
   renderedContentCache.value.delete(`${messageId}-thinking`);
+  messageContentCache.value.delete(messageId);
+  thinkingContentCache.value.delete(`${messageId}-thinking`);
 };
 
 // 清空所有消息
 const handleClearAll = () => {
   if (confirm("确定要清空所有消息吗？此操作不可撤销。")) {
     appActions.clearMessages();
-    // 清除所有渲染缓存
+    // 清除所有渲染缓存和内容缓存
     renderedContentCache.value.clear();
+    messageContentCache.value.clear();
+    thinkingContentCache.value.clear();
   }
 };
 
@@ -367,50 +405,64 @@ watch(
     if (messages && messages.length > 0) {
       const lastMessage = messages[messages.length - 1];
 
-      // 流式更新：强制重新渲染最后一条消息
-      if (isStreaming && lastMessage && !lastMessage.isUser) {
-        renderedContentCache.value.delete(lastMessage.id);
+      // 流式更新或内容变化：强制重新渲染最后一条消息
+      if (lastMessage && !lastMessage.isUser) {
+        // 检查内容是否变化（通过比较原始内容）
+        const cachedContent = messageContentCache.value.get(lastMessage.id);
+        const hasContentChanged = cachedContent !== lastMessage.content;
 
-        // 如果有思考内容，也清除其缓存
-        if (lastMessage.thinkingContent) {
-          renderedContentCache.value.delete(`${lastMessage.id}-thinking`);
-        }
+        // 如果是流式更新或内容已变化，清除缓存并重新渲染
+        if (isStreaming || hasContentChanged) {
+          renderedContentCache.value.delete(lastMessage.id);
+          // 更新内容缓存
+          messageContentCache.value.set(lastMessage.id, lastMessage.content);
 
-        await nextTick();
+          // 如果有思考内容，也检查并清除其缓存
+          if (lastMessage.thinkingContent) {
+            const cachedThinking = thinkingContentCache.value.get(`${lastMessage.id}-thinking`);
+            const hasThinkingChanged = cachedThinking !== lastMessage.thinkingContent;
+            if (hasThinkingChanged || isStreaming) {
+              renderedContentCache.value.delete(`${lastMessage.id}-thinking`);
+              thinkingContentCache.value.set(`${lastMessage.id}-thinking`, lastMessage.thinkingContent);
+            }
+          }
 
-        // 渲染最新内容
-        renderMarkdown(lastMessage.content)
-          .then((result) => {
-            renderedContentCache.value.set(lastMessage.id, result);
-          })
-          .catch(() => {
-            const fallback = lastMessage.content.replace(/\n/g, "<br>");
-            renderedContentCache.value.set(lastMessage.id, fallback);
-          });
+          await nextTick();
 
-        // 渲染思考内容
-        if (lastMessage.thinkingContent) {
-          renderMarkdown(lastMessage.thinkingContent)
+          // 渲染最新内容
+          renderMarkdown(lastMessage.content)
             .then((result) => {
-              renderedContentCache.value.set(
-                `${lastMessage.id}-thinking`,
-                result
-              );
+              renderedContentCache.value.set(lastMessage.id, result);
             })
             .catch(() => {
-              const fallback = lastMessage.thinkingContent.replace(
-                /\n/g,
-                "<br>"
-              );
-              renderedContentCache.value.set(
-                `${lastMessage.id}-thinking`,
-                fallback
-              );
+              const fallback = lastMessage.content.replace(/\n/g, "<br>");
+              renderedContentCache.value.set(lastMessage.id, fallback);
             });
-        }
 
-        // 流式更新时自动滚动（参考 newme-ds）
-        handleDown();
+          // 渲染思考内容
+          if (lastMessage.thinkingContent) {
+            renderMarkdown(lastMessage.thinkingContent)
+              .then((result) => {
+                renderedContentCache.value.set(
+                  `${lastMessage.id}-thinking`,
+                  result
+                );
+              })
+              .catch(() => {
+                const fallback = lastMessage.thinkingContent.replace(
+                  /\n/g,
+                  "<br>"
+                );
+                renderedContentCache.value.set(
+                  `${lastMessage.id}-thinking`,
+                  fallback
+                );
+              });
+          }
+
+          // 流式更新时自动滚动（参考 newme-ds）
+          handleDown();
+        }
       }
       // 新消息添加：滚动到底部
       else if (oldMessages && messages.length > oldMessages.length) {

@@ -1657,6 +1657,164 @@ async function handleMessage(
       }
       break;
 
+    case "wait_for_element":
+      // 等待元素出现
+      (async () => {
+        try {
+          const result = await executeAgentAction({
+            type: "wait_for_element",
+            ...message.data,
+          });
+          sendResponse(result);
+        } catch (error) {
+          sendResponse({
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      })();
+      return true;
+
+    case "extract_text":
+      // 提取文本
+      (async () => {
+        try {
+          const result = await executeAgentAction({
+            type: "extract_text",
+            ...message.data,
+          });
+          sendResponse({
+            success: result.success,
+            data: { result: result.result },
+            error: result.error,
+          });
+        } catch (error) {
+          sendResponse({
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      })();
+      return true;
+
+    case "extract_links":
+      // 提取链接
+      (async () => {
+        try {
+          const result = await executeAgentAction({
+            type: "extract_links",
+            ...message.data,
+          });
+          sendResponse({
+            success: result.success,
+            data: { result: result.result },
+            error: result.error,
+          });
+        } catch (error) {
+          sendResponse({
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      })();
+      return true;
+
+    case "extract_images":
+      // 提取图片
+      (async () => {
+        try {
+          const result = await executeAgentAction({
+            type: "extract_images",
+            ...message.data,
+          });
+          sendResponse({
+            success: result.success,
+            data: { result: result.result },
+            error: result.error,
+          });
+        } catch (error) {
+          sendResponse({
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      })();
+      return true;
+
+    case "get_element_info":
+      // 获取元素信息
+      (async () => {
+        try {
+          const result = await executeAgentAction({
+            type: "get_element_info",
+            ...message.data,
+          });
+          sendResponse({
+            success: result.success,
+            data: { result: result.result },
+            error: result.error,
+          });
+        } catch (error) {
+          sendResponse({
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      })();
+      return true;
+
+    case "compare_screenshots":
+      // 比较截图
+      (async () => {
+        try {
+          const result = await executeAgentAction({
+            type: "compare_screenshots",
+            ...message.data,
+          });
+          sendResponse({
+            success: result.success,
+            data: { result: result.result },
+            error: result.error,
+          });
+        } catch (error) {
+          sendResponse({
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      })();
+      return true;
+
+    case "resizePage":
+      // 调整页面大小（通过 CSS 模拟）
+      try {
+        const { width, height } = message.data || {};
+        if (!width || !height) {
+          sendResponse({
+            success: false,
+            error: "缺少宽度或高度参数",
+          });
+          return;
+        }
+
+        // 通过 CSS 设置页面大小（注意：这只能调整视口，不能真正改变浏览器窗口大小）
+        document.documentElement.style.width = `${width}px`;
+        document.documentElement.style.height = `${height}px`;
+        document.body.style.width = `${width}px`;
+        document.body.style.height = `${height}px`;
+
+        sendResponse({
+          success: true,
+          data: { message: "页面大小已调整" },
+        });
+      } catch (error) {
+        sendResponse({
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      break;
+
     case "agentUpdate":
       // 处理 Agent 状态更新
       // 确保 message.data 存在且格式正确
@@ -1713,67 +1871,47 @@ async function handleAgentUpdate(
   // 安全解构
   const { type, data } = update;
 
-  // 确保有AI消息容器（每个任务对应一轮对话）
-  // 使用 nextTick 确保消息列表已更新
-  await nextTick();
-  const messages = appState.messages.value;
-  let aiMessage =
-    messages.length > 0 && !messages[messages.length - 1].isUser
-      ? messages[messages.length - 1]
-      : null;
-
-  // 如果最后一条是用户消息，说明是新任务，需要创建AI消息容器
-  if (!aiMessage && type !== "done" && type !== "stopped") {
-    console.log("📝 创建新的AI消息容器（新任务）");
-    appActions.addMessage("", false);
-    // 等待消息列表更新
-    await nextTick();
-    // 重新获取消息列表
-    const updatedMessages = appState.messages.value;
-    aiMessage =
-      updatedMessages.length > 0 &&
-      !updatedMessages[updatedMessages.length - 1].isUser
-        ? updatedMessages[updatedMessages.length - 1]
-        : null;
-
-    // 再次验证 aiMessage 是否正确
-    if (!aiMessage || aiMessage.isUser) {
-      console.error("❌ 创建AI消息容器失败，最后一条消息仍然是用户消息", {
-        messagesLength: updatedMessages.length,
-        lastMessage:
-          updatedMessages.length > 0
-            ? updatedMessages[updatedMessages.length - 1]
-            : null,
-      });
-      // 如果创建失败，直接返回，避免错误地更新用户消息
-      return;
-    }
-  }
-
   // 格式化操作类型名称（参考 chrome-devtools-mcp）
   const formatActionType = (actionType: string): string => {
     const actionNames: Record<string, string> = {
+      // Navigation
+      navigate: "导航",
+      // DOM & Interaction
       click: "点击",
       type: "输入",
       scroll: "滚动",
-      navigate: "导航",
       wait: "等待",
-      extract: "提取",
-      execute_script: "执行脚本",
-      take_screenshot: "截图",
-      take_snapshot: "快照",
-      get_console_messages: "获取控制台消息",
-      get_network_requests: "获取网络请求",
-      hover: "悬停",
-      drag: "拖拽",
-      press_key: "按键",
-      resize_page: "调整页面大小",
       wait_for_element: "等待元素",
       extract_text: "提取文本",
       extract_links: "提取链接",
       extract_images: "提取图片",
       get_element_info: "获取元素信息",
+      take_snapshot: "快照",
+      // Debugging
+      evaluate_script: "执行脚本",
+      execute_script: "执行脚本",
+      take_screenshot: "截图",
+      get_console_message: "获取控制台消息",
+      list_console_messages: "列出控制台消息",
+      get_console_messages: "获取控制台消息",
+      // Emulation
+      emulate: "设备模拟",
+      resize_page: "调整页面大小",
+      // Network
+      get_network_request: "获取网络请求",
+      list_network_requests: "列出网络请求",
+      get_network_requests: "获取网络请求",
+      // Performance
+      performance_start_trace: "开始性能追踪",
+      performance_stop_trace: "停止性能追踪",
+      performance_analyze_insight: "性能分析",
+      // Legacy (兼容旧接口)
+      extract: "提取",
+      hover: "悬停",
+      drag: "拖拽",
+      press_key: "按键",
       compare_screenshots: "比较截图",
+      // Task Completion
       done: "完成",
     };
     return actionNames[actionType] || actionType;
@@ -1830,36 +1968,16 @@ async function handleAgentUpdate(
       }
     }
 
-    // 确保 aiMessage 存在且是AI消息
-    if (aiMessage && !aiMessage.isUser) {
-      appActions.updateLastMessage(stepInfo);
-    } else {
-      // 如果 aiMessage 不存在或不是AI消息，创建新的AI消息
-      console.warn("⚠️ AI消息容器不存在或类型错误，创建新的AI消息", {
-        aiMessage,
-        messagesLength: messages.length,
-        lastMessage: messages.length > 0 ? messages[messages.length - 1] : null,
-      });
-      appActions.addMessage(stepInfo, false);
-    }
+    // 每个步骤单独作为一条 AI 消息，避免与用户消息混淆
+    appActions.addMessage(stepInfo, false);
   } else if (type === "thought") {
-    // 思考过程（仅在步骤开始时显示）
+    // 思考过程（单独一条消息）
     const thoughtText = `\n\n💭 **思考中**: ${data}\n`;
-    if (aiMessage && !aiMessage.isUser) {
-      appActions.updateLastMessage(thoughtText);
-    } else {
-      console.warn("⚠️ thought: AI消息容器不存在或类型错误，创建新消息");
-      appActions.addMessage(thoughtText, false);
-    }
+    appActions.addMessage(thoughtText, false);
   } else if (type === "done") {
     // 任务完成
     const summary = `\n\n---\n\n### ✅ 任务完成\n\n${data}`;
-    if (aiMessage && !aiMessage.isUser) {
-      appActions.updateLastMessage(summary);
-    } else {
-      console.warn("⚠️ done: AI消息容器不存在或类型错误，创建新消息");
-      appActions.addMessage(summary, false);
-    }
+    appActions.addMessage(summary, false);
     stateManager.completeStreaming();
     streamManager.complete(summary);
     appActions.setGenerating(false);
@@ -1867,32 +1985,17 @@ async function handleAgentUpdate(
   } else if (type === "error") {
     // 错误信息
     const errorText = `\n\n---\n\n### ❌ 错误\n\n${data}`;
-    if (aiMessage && !aiMessage.isUser) {
-      appActions.updateLastMessage(errorText);
-    } else {
-      console.warn("⚠️ error: AI消息容器不存在或类型错误，创建新消息");
-      appActions.addMessage(errorText, false);
-    }
+    appActions.addMessage(errorText, false);
   } else if (type === "warning") {
     // 警告信息
     const warningText = `\n\n---\n\n### ⚠️ 警告\n\n${data}`;
-    if (aiMessage && !aiMessage.isUser) {
-      appActions.updateLastMessage(warningText);
-    } else {
-      console.warn("⚠️ warning: AI消息容器不存在或类型错误，创建新消息");
-      appActions.addMessage(warningText, false);
-    }
+    appActions.addMessage(warningText, false);
   } else if (type === "stopped") {
     // 任务停止
     const stoppedText = `\n\n---\n\n### 🛑 任务已停止\n\n${
       data || "用户主动停止了任务"
     }`;
-    if (aiMessage && !aiMessage.isUser) {
-      appActions.updateLastMessage(stoppedText);
-    } else {
-      console.warn("⚠️ stopped: AI消息容器不存在或类型错误，创建新消息");
-      appActions.addMessage(stoppedText, false);
-    }
+    appActions.addMessage(stoppedText, false);
     stateManager.reset();
     appActions.setGenerating(false);
     appActions.setStreaming(false);
