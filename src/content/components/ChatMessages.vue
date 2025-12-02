@@ -89,7 +89,7 @@
             <div v-html="getRenderedContent(message.id)"></div>
           </div>
 
-          <!-- 复制按钮 -->
+          <!-- 操作按钮 -->
           <div class="message-actions">
             <el-tooltip
               content="复制消息内容"
@@ -107,6 +107,23 @@
                 <el-icon>
                   <Check v-if="copyStates[message.id]" />
                   <DocumentCopy v-else />
+                </el-icon>
+              </el-button>
+            </el-tooltip>
+            <el-tooltip
+              content="删除这条消息"
+              placement="top"
+              :show-after="500"
+            >
+              <el-button
+                class="action-button delete-button"
+                @click="deleteMessage(message.id)"
+                :disabled="props.isProcessing"
+                circle
+                size="small"
+              >
+                <el-icon>
+                  <Delete />
                 </el-icon>
               </el-button>
             </el-tooltip>
@@ -149,6 +166,7 @@ import {
   Check,
   ArrowRight,
   ArrowDown as ArrowDownIcon,
+  Delete,
 } from "@element-plus/icons-vue";
 import { renderMarkdown } from "../../shared/utils/markdown";
 import { appActions } from "../../shared/stores/appStore";
@@ -276,6 +294,11 @@ const copyMessage = async (message: Message) => {
     console.error("复制失败:", error);
     // 可以在这里添加错误提示
   }
+};
+
+// 删除消息
+const deleteMessage = (messageId: string) => {
+  appActions.deleteMessage(messageId);
 };
 
 // 滚动到底部（参考 newme-ds 的 handleDown 实现）
@@ -541,6 +564,17 @@ onMounted(async () => {
 .copy-button.copy-success:hover {
   background: linear-gradient(135deg, #5daf34 0%, #7bc85a 100%) !important;
   box-shadow: 0 6px 16px rgba(103, 194, 58, 0.4) !important;
+}
+
+/* 删除按钮样式 */
+.delete-button {
+  color: #f56c6c !important;
+}
+
+.delete-button:hover:not(:disabled) {
+  background: rgba(245, 108, 108, 0.1) !important;
+  border-color: #f56c6c !important;
+  color: #f56c6c !important;
 }
 
 /* 用户消息样式 */

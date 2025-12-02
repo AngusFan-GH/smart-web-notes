@@ -139,6 +139,16 @@ export const appActions = {
 
   clearMessages() {
     state.messages = [];
+    this.updateConversationCache();
+  },
+
+  deleteMessage(messageId: string) {
+    const index = state.messages.findIndex((m) => m.id === messageId);
+    if (index !== -1) {
+      state.messages.splice(index, 1);
+      // 更新对话缓存
+      this.updateConversationCache();
+    }
   },
 
   // 设置管理
